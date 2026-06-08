@@ -1,0 +1,15 @@
+version: "3.9"
+
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 3
+
+  # Supabase local dev (supabase-cli required: brew install supabase)
+  # Run: supabase start
+  # This compose file is for Redis only; Supabase runs via supabase-cli.
