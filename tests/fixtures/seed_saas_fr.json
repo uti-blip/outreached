@@ -1,0 +1,7 @@
+[
+    {"company_name": "Acme SaaS", "domain": "acme-saas.fr", "email": "cto@acme-saas.fr"},
+    {"company_name": "DataCorp France", "domain": "datacorp.fr", "email": "vpeng@datacorp.fr"},
+    {"company_name": "ScaleUp Lyon", "domain": "scaleup-lyon.com", "email": "ceo@scaleup-lyon.com"},
+    {"company_name": "TechFlow Paris", "domain": "techflow.io", "email": "cto@techflow.io"},
+    {"company_name": "NexGen Software", "domain": "nexgen.io", "email": "head@nexgen.io"}
+]
