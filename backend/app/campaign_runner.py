@@ -98,7 +98,7 @@ async def run_campaign(
 
             enriched_data = enriched.output
 
-            # Step 2: ICP Scoring (Kimi K2.6)
+            # Step 2: ICP Scoring (Kimi K2.6, fallback DeepSeek)
             playbook_context = store.get_context(f"{company} {enriched_data.get('industry', '')}")
             scored = await scorer.run(
                 {
@@ -116,6 +116,12 @@ async def run_campaign(
                     "verdict": scored.output.get("verdict", "unknown"),
                 }
             )
+
+            if not scored.success:
+                lead_result["steps"][-1]["error"] = scored.error
+                result.errors.append(f"ICP scoring failed for {company}: {scored.error}")
+                result.details.append(lead_result)
+                continue
 
             if scored.output.get("verdict") != "go":
                 lead_result["skipped"] = f"ICP score too low: {scored.output.get('score', 0)}"

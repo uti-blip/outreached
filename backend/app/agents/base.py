@@ -40,43 +40,101 @@ class BaseAgent(ABC):
     def _build_prompt(self, data: dict) -> str: ...
 
     async def run(self, data: dict) -> AgentResult:
-        """Execute the agent: build prompt → call LLM → return result."""
+        """Execute the agent: build prompt → call LLM (with fallback) → return result."""
         import time as _time
 
-        provider = self._router.get_provider(self.agent_type)
-        model = provider.model
-        start = _time.monotonic()
+        # Try preferred provider, then fall back through the chain
+        errors = []
+        for attempt, provider in enumerate(self._get_provider_chain()):
+            model = provider.model
+            start = _time.monotonic()
+            try:
+                response = await provider.complete(
+                    prompt=self._build_prompt(data),
+                    system=self._system_prompt(),
+                    temperature=self._temperature(),
+                    max_tokens=self._max_tokens(),
+                )
+                latency = int((_time.monotonic() - start) * 1000)
+                cost = provider.cost_eur(response.input_tokens, response.output_tokens)
+                return AgentResult(
+                    agent_type=self.agent_type,
+                    success=True,
+                    output=self._parse_response(response.text),
+                    model=model,
+                    input_tokens=response.input_tokens,
+                    output_tokens=response.output_tokens,
+                    cost_eur=round(cost, 6),
+                    latency_ms=latency,
+                )
+            except Exception as e:
+                latency = int((_time.monotonic() - start) * 1000)
+                errors.append(f"[{provider.kind.value}] {e}")
+                if attempt == 0:
+                    continue  # try fallback
 
-        try:
-            response = await provider.complete(
-                prompt=self._build_prompt(data),
-                system=self._system_prompt(),
-                temperature=self._temperature(),
-                max_tokens=self._max_tokens(),
-            )
-            latency = int((_time.monotonic() - start) * 1000)
-            cost = provider.cost_eur(response.input_tokens, response.output_tokens)
+        # All providers failed
+        return AgentResult(
+            agent_type=self.agent_type,
+            success=False,
+            output={},
+            model="none",
+            latency_ms=0,
+            error="; ".join(errors),
+        )
 
-            return AgentResult(
-                agent_type=self.agent_type,
-                success=True,
-                output=self._parse_response(response.text),
-                model=model,
-                input_tokens=response.input_tokens,
-                output_tokens=response.output_tokens,
-                cost_eur=round(cost, 6),
-                latency_ms=latency,
+    def _get_provider_chain(self) -> list:
+        """Return providers in fallback order: preferred first, then cheaper alternatives."""
+        from backend.app.llm.provider import (
+            ProviderKind,
+        )
+        from backend.app.llm.router import (
+            AGENT_COMPLEXITY,
+            COMPLEXITY_PROVIDER,
+            TaskComplexity,
+        )
+
+        complexity = AGENT_COMPLEXITY.get(self.agent_type, TaskComplexity.VOLUME)
+        preferred = COMPLEXITY_PROVIDER[complexity]
+
+        providers = []
+        # Preferred
+        providers.append(self._make_provider(preferred))
+        # Fallbacks in cost order
+        for kind in (ProviderKind.DEEPSEEK, ProviderKind.KIMI, ProviderKind.ANTHROPIC):
+            if kind != preferred:
+                p = self._make_provider(kind)
+                if p:
+                    providers.append(p)
+
+        return [p for p in providers if p is not None]
+
+    def _make_provider(self, kind):
+        from backend.app.config import settings
+        from backend.app.llm.provider import (
+            AnthropicProvider,
+            DeepSeekProvider,
+            KimiProvider,
+            ProviderKind,
+        )
+        from backend.app.llm.router import PROVIDER_MODEL
+
+        if kind == ProviderKind.DEEPSEEK and settings.deepseek_api_key:
+            return DeepSeekProvider(
+                api_key=settings.deepseek_api_key,
+                model=PROVIDER_MODEL[ProviderKind.DEEPSEEK],
             )
-        except Exception as e:
-            latency = int((_time.monotonic() - start) * 1000)
-            return AgentResult(
-                agent_type=self.agent_type,
-                success=False,
-                output={},
-                model=model,
-                latency_ms=latency,
-                error=str(e),
+        if kind == ProviderKind.KIMI and settings.kimi_api_key:
+            return KimiProvider(
+                api_key=settings.kimi_api_key,
+                model=PROVIDER_MODEL[ProviderKind.KIMI],
             )
+        if kind == ProviderKind.ANTHROPIC and settings.anthropic_api_key:
+            return AnthropicProvider(
+                api_key=settings.anthropic_api_key,
+                model=PROVIDER_MODEL[ProviderKind.ANTHROPIC],
+            )
+        return None
 
     def _temperature(self) -> float:
         return 0.3  # default: low temp for structured tasks

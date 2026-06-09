@@ -49,10 +49,14 @@ class TestInferenceRouter:
             assert complexity in TaskComplexity
             assert COMPLEXITY_PROVIDER[complexity] in ProviderKind
 
-    def test_router_creation_no_keys(self):
-        """Router works even with no API keys (just won't have providers)."""
+    @patch("backend.app.llm.router.settings")
+    def test_router_creation_no_keys(self, mock_settings):
+        """Router raises when no providers are configured."""
+        mock_settings.deepseek_api_key = ""
+        mock_settings.kimi_api_key = ""
+        mock_settings.anthropic_api_key = ""
+
         router = InferenceRouter()
-        # Without any API keys, get_provider raises
         with pytest.raises(ValueError, match="No LLM providers"):
             router.get_provider("sourcing")
 

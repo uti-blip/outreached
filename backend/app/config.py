@@ -30,12 +30,16 @@ class Settings(BaseSettings):
     # ── Observability ──────────────────────────────
     langfuse_public_key: str = ""
     langfuse_secret_key: str = ""
+    langfuse_host: str = ""
+
+    # ── Sentry ─────────────────────────────────────
+    sentry_dsn: str = ""
 
     # ── Feature flags ──────────────────────────────
     dry_run_default: bool = True  # never send real email in dev/test
     vertical: str = "saas_fr"
 
-    model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
+    model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
 
 
 settings = Settings()
