@@ -10,19 +10,24 @@
 git clone <repo-url> outreached && cd outreached
 cp .env.example .env   # edit with your API keys
 
-# 2. Install
+# 2. Backend
 uv sync --group dev
+uv run uvicorn backend.app.main:app --port 8001
 
-# 3. Smoke test (mock mode — no API keys needed)
+# 3. Frontend
+cd frontend && pnpm install && pnpm dev
+# Opens on http://localhost:3000/campaign
+
+# 4. Smoke test (mock mode — no API keys needed)
 uv run python -m backend.app.cli run-campaign \
     --seed-list tests/fixtures/seed_saas_fr.json
 
-# 4. Run all tests
-uv run pytest
+# 5. Smartlead warmup (requires Smartlead API key)
+uv run python scripts/smartlead_setup.py provision \
+    --api-key sl_... --domain votre-domaine-cold.fr
 
-# 5. Live mode (requires LLM API keys)
-uv run python -m backend.app.cli run-campaign \
-    --seed-list tests/fixtures/seed_saas_fr.json --live
+# 6. Run all tests
+uv run pytest
 ```
 
 ## Stack
