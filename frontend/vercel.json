@@ -1,4 +1,3 @@
 {
-  "$schema": "https://openapi.vercel.sh/vercel.json",
-  "comment": "The Next.js API routes validate a private workspace session and CSRF proof before injecting the backend credential. No public API rewrite."
+  "$schema": "https://openapi.vercel.sh/vercel.json"
 }

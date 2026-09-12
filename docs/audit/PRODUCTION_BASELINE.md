@@ -23,14 +23,18 @@ Le périmètre livré est l’espace privé de prospection manuelle. La publicat
 
 ## Preuves locales
 
-- 153 tests Python réussis, 1 test Redis optionnel ignoré (avant ajout des tests du smoke HTTP).
+- 176 tests Python réussis, 1 test Redis optionnel ignoré ; 23 tests dédiés au smoke HTTP inclus.
 - 13 tests frontend réussis ; lint, TypeScript et build de production réussis.
 - Audits des dépendances de production : zéro vulnérabilité connue après correction.
 - Preuves de configuration : mauvais secrets/hôtes/origines refusés ; configuration correcte démarrée ; envoi live refusé.
 - Parcours HTTP sur base synthétique isolée : connexion/CSRF, profil, création et déduplication d’un prospect, trois brouillons, préparation sans envoi, déclaration manuelle distincte d’une délivrance, refus du doublon et d’une relance prématurée, opposition persistante, exports, déconnexion.
 - Connexion et tableau de bord vérifiés dans Chrome. Aucun message réel envoyé.
 
-Ces tests ne prouvent pas encore le déploiement Docker distant, la persistance d’un volume Railway ou la disponibilité de l’API publique. Les résultats CI et déploiement doivent être ajoutés après exécution.
+La [CI GitHub 34674212523](https://github.com/uti-blip/outreached/actions/runs/34674212523) a réussi sur `6e41aa1` : jobs backend, frontend et conteneur. Le job conteneur a construit l’image, démarré l’API en production avec volume Docker, vérifié 401 anonyme / 200 authentifié, sauvegardé/restauré et vérifié la persistance après redémarrage.
+
+Une [prévisualisation Vercel](https://outreached-d091td2jr-uti-blips-projects.vercel.app) a été construite et publiée (`dpl_87t7ELH46mk1ZTHC3TfWcZscURa7`). Elle reste fermée sans identifiants/configuration API. Le champ non supporté `comment` a été retiré de `vercel.json` après validation par le service.
+
+Ces preuves ne valident pas encore un volume Railway ni une API publique : l’essai Railway expiré bloque la création du projet Outreached. Aucun projet/service Lexia existant n’a été modifié.
 
 ## Limites explicites
 
