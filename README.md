@@ -47,7 +47,7 @@ La CI reproduit ces contrôles et teste les deux stockages, le contrôle d’acc
 
 ## Production
 
-L’hébergement gratuit utilise **Render Free + Neon Free**. `deploy/Dockerfile.free` réunit Next.js et FastAPI dans un conteneur sans privilèges ; seul Next.js est public. La base PostgreSQL externe conserve les données lors des redémarrages et mises en veille. `render.yaml` fixe explicitement le plan gratuit et la région Francfort.
+Le conteneur est préparé pour **Render Free + Neon Free**. `deploy/Dockerfile.free` réunit Next.js et FastAPI dans un conteneur sans privilèges ; seul Next.js est public. La base PostgreSQL externe conserve les données lors des redémarrages et mises en veille. `render.yaml` fixe explicitement le plan gratuit et la région Francfort. **La publication Render reste bloquée** : le 12 septembre 2026, l’API et l’interface demandent une carte même pour créer le service Free dans le workspace dédié. Aucun service public fonctionnel n’est confirmé à ce stade.
 
 Le gratuit impose des limites de disponibilité : Render met le service en veille après 15 minutes sans trafic, avec un réveil d’environ une minute. Utiliser un workspace Render sans carte bancaire et conserver Neon sur Free pour que les dépassements interrompent le service sans facturation automatique. Cette configuration convient à un petit espace manuel ; elle ne promet pas de disponibilité continue.
 

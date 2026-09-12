@@ -131,6 +131,9 @@ for attempt in {1..40}; do
 done
 test "$(docker inspect --format '{{.State.Health.Status}}' "$test_database")" = healthy
 docker restart "$test_app" >/dev/null
+# An ephemeral host port can be reassigned when Docker restarts the container.
+# Resolve the current mapping before probing the restarted application.
+address="http://$(docker port "$test_app" 10000/tcp)"
 python3 scripts/verify_free_container.py --address "$address" \
   --phase after-restart --state-file "$test_root/state.json"
 echo 'PASS combined production image: TLS PostgreSQL, auth, CSRF, business flow and restart persistence'

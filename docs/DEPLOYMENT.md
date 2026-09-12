@@ -2,7 +2,9 @@
 
 ## Hébergement gratuit
 
-Le déploiement utilise un **workspace Render Hobby sans carte bancaire**, un seul service **Free** à Francfort et une base **Neon Free** à Francfort. Aucun disque, base Render, worker, domaine payant ou abonnement n’est nécessaire.
+La configuration préparée cible un **workspace Render Hobby sans carte bancaire**, un seul service **Free** à Francfort et une base **Neon Free** à Francfort. Aucun disque, base Render, worker, domaine payant ou abonnement n’est prévu.
+
+**État vérifié le 12 septembre 2026 :** la base Neon Free est créée, son schéma privé est migré et sa connexion restreinte fonctionne. La création du service Render Free est bloquée par une demande de carte, à la fois dans l’API (`402 need_payment_info`) et dans l’interface. Aucun moyen de paiement n’a été ajouté. La configuration ci-dessous est prête à déployer mais ne constitue pas une preuve de mise en ligne gratuite. Ajouter une carte pourrait autoriser la facturation des dépassements de trafic ; cette option ne garantit donc pas un coût strictement nul.
 
 `deploy/Dockerfile.free` construit Next.js en mode standalone et FastAPI. Le conteneur tourne sans privilèges. Next.js écoute le port public fourni par Render ; FastAPI reste sur `127.0.0.1:8001`, protégé par sa clé. Les données résident exclusivement dans PostgreSQL. Si un processus échoue, le superviseur arrête l’autre pour que Render constate l’échec.
 

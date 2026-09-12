@@ -117,15 +117,19 @@ class WorkspaceClient:
         return response
 
     def ready(self) -> None:
+        last_failure = "GET /health: status was not ready"
         for _attempt in range(60):
             try:
                 response = self.request("GET", "/health")
                 if response.json().get("status") == "ready":
                     return
-            except VerificationError:
-                pass
+            except VerificationError as error:
+                last_failure = str(error)
             time.sleep(2)
-        raise VerificationError("Combined frontend and PostgreSQL backend did not become ready")
+        raise VerificationError(
+            "Combined frontend and PostgreSQL backend did not become ready; "
+            f"last probe: {last_failure}"
+        )
 
     def login(self) -> None:
         self.request("GET", "/api/workspace", expected=401)

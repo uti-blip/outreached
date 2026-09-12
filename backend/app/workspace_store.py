@@ -10,7 +10,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
 import psycopg2
-from psycopg2.extras import DictCursor
+from psycopg2.extras import DictCursor, execute_values
 from sqlalchemy import create_engine
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -99,6 +99,32 @@ class PostgresWorkspace:
             cursor.close()
             raise
         return cursor
+
+
+def insert_rows(conn, table: str, columns: tuple[str, ...], rows: list[tuple]):
+    """Insert at most one import's rows in a parameterized batch transaction.
+
+    Callers supply constant identifiers; enforce their shape separately from
+    values, which are always adapted by the database driver. PostgreSQL uses a
+    single round trip rather than DB-API executemany's per-row requests.
+    """
+    if (
+        table not in WORKSPACE_TABLES
+        or not columns
+        or any(not re.fullmatch(r"[a-z_][a-z0-9_]*", column) for column in columns)
+    ):
+        raise ValueError("Invalid workspace insert identifiers")
+    if len(rows) > 1000 or any(len(row) != len(columns) for row in rows):
+        raise ValueError("Invalid workspace insert batch")
+    if not rows:
+        return
+    names = ",".join(f'"{column}"' for column in columns)
+    statement = f'INSERT INTO "{table}" ({names}) VALUES '
+    if getattr(conn, "is_postgres", False):
+        with conn.connection.cursor() as cursor:
+            execute_values(cursor, statement + "%s", rows, page_size=1000)
+    else:
+        conn.executemany(statement + "(" + ",".join("?" for _ in columns) + ")", rows)
 
 
 @contextmanager
