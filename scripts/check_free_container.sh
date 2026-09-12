@@ -8,6 +8,11 @@ for executable in docker openssl python3; do
   command -v "$executable" >/dev/null || { echo "Required executable unavailable: $executable" >&2; exit 1; }
 done
 docker info >/dev/null
+container_mode="${WORKSPACE_CONTAINER_MODE:-combined}"
+case "$container_mode" in
+  combined|serverless) ;;
+  *) echo 'WORKSPACE_CONTAINER_MODE must be combined or serverless' >&2; exit 1 ;;
+esac
 
 test_root="$(mktemp -d)"
 test_id="outreached-free-$(openssl rand -hex 5)"
@@ -60,17 +65,18 @@ fi
 mkdir "$test_root/tls"
 openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
   -keyout "$test_root/tls/server.key" -out "$test_root/tls/server.crt" \
-  -subj '/CN=postgres' -addext 'subjectAltName=DNS:postgres' >/dev/null 2>&1
+  -subj '/CN=postgres' -addext 'subjectAltName=DNS:postgres,IP:127.0.0.1' >/dev/null 2>&1
 chmod 644 "$test_root/tls/server.crt"
 docker network create "$test_network" >/dev/null
 docker volume create "$test_volume" >/dev/null
 docker run --detach --name "$test_database" \
   --network "$test_network" --network-alias postgres \
+  --publish 127.0.0.1::5432 \
   --mount "type=volume,source=$test_volume,target=/var/lib/postgresql/data" \
   --mount "type=bind,source=$test_root/tls,target=/ci-tls,readonly" \
-  --env POSTGRES_DB=workspace --env POSTGRES_USER=workspace_owner \
+  --env POSTGRES_DB=outreached_test --env POSTGRES_USER=workspace_owner \
   --env POSTGRES_PASSWORD="$owner_password" \
-  --health-cmd 'pg_isready -U workspace_owner -d workspace' \
+  --health-cmd 'pg_isready -U workspace_owner -d outreached_test' \
   --health-interval 2s --health-timeout 3s --health-retries 30 \
   --entrypoint /bin/sh postgres:17-bookworm -ec '
     cp /ci-tls/server.crt /tmp/server.crt
@@ -89,27 +95,33 @@ test "$(docker inspect --format '{{.State.Health.Status}}' "$test_database")" = 
 docker build --file deploy/Dockerfile.free --tag "$test_image" .
 certificate_mount="type=bind,source=$test_root/tls/server.crt,target=/certs/server.crt,readonly"
 docker run --rm --network "$test_network" --mount "$certificate_mount" \
-  --env "WORKSPACE_MIGRATION_DATABASE_URL=postgresql://workspace_owner:$owner_password@postgres:5432/workspace?sslmode=verify-full" \
+  --env "WORKSPACE_MIGRATION_DATABASE_URL=postgresql://workspace_owner:$owner_password@postgres:5432/outreached_test?sslmode=verify-full" \
   --env WORKSPACE_RUNTIME_DB_PASSWORD="$runtime_password" \
   --env WORKSPACE_DATABASE_SSL_ROOT_CERT=/certs/server.crt \
   --entrypoint python "$test_image" scripts/workspace_postgres.py migrate
 
+application_command=("$test_image")
+if [ "$container_mode" = serverless ]; then
+  # Exercise Next alone: a Python API is deliberately absent in this mode.
+  application_command=(--entrypoint node --env WORKSPACE_BACKEND=postgres --env HOSTNAME=0.0.0.0 "$test_image" frontend/server.js)
+fi
 docker run --detach --name "$test_app" --network "$test_network" \
   --publish 127.0.0.1::10000 --mount "$certificate_mount" \
-  --env "WORKSPACE_DATABASE_URL=postgresql://outreached_app:$runtime_password@postgres:5432/workspace?sslmode=verify-full" \
+  --env "WORKSPACE_DATABASE_URL=postgresql://outreached_app:$runtime_password@postgres:5432/outreached_test?sslmode=verify-full" \
   --env WORKSPACE_DATABASE_SSL_ROOT_CERT=/certs/server.crt \
   --env WORKSPACE_API_KEY="$api_key" --env SECRET_KEY="$secret_key" \
   --env WORKSPACE_LOGIN_USER --env WORKSPACE_PASSWORD_HASH="$password_hash" \
   --env WORKSPACE_SESSION_SECRET="$session_secret" \
   --env WORKSPACE_PUBLIC_ORIGIN=https://workspace.example.test \
   --env COMMERCIAL_LAUNCH_ENABLED=false \
-  "$test_image" >/dev/null
+  "${application_command[@]}" >/dev/null
 address="http://$(docker port "$test_app" 10000/tcp)"
 
 python3 scripts/verify_free_container.py --address "$address" \
   --phase before-restart --state-file "$test_root/state.json"
 
 # The backend is not published. Check its auth barrier inside the actual image.
+if [ "$container_mode" = combined ]; then
 docker exec "$test_app" python -c '
 import urllib.error
 import urllib.request
@@ -122,6 +134,14 @@ else:
     raise AssertionError("Private backend exposed unauthenticated workspace data")
 print("PASS private backend authentication")
 '
+else
+  docker exec "$test_app" python -c '
+import socket
+with socket.socket() as connection:
+    assert connection.connect_ex(("127.0.0.1", 8001)) != 0, "Serverless mode must not need Python API"
+print("PASS standalone Next.js has no Python backend process")
+'
+fi
 
 # Restart both processes and PostgreSQL, retaining only the external DB volume.
 docker restart "$test_database" >/dev/null
@@ -136,4 +156,14 @@ docker restart "$test_app" >/dev/null
 address="http://$(docker port "$test_app" 10000/tcp)"
 python3 scripts/verify_free_container.py --address "$address" \
   --phase after-restart --state-file "$test_root/state.json"
-echo 'PASS combined production image: TLS PostgreSQL, auth, CSRF, business flow and restart persistence'
+if [ "$container_mode" = serverless ]; then
+  database_address="$(docker port "$test_database" 5432/tcp)"
+  export WORKSPACE_SERVERLESS_TEST_URL="$address"
+  export WORKSPACE_TEST_POSTGRES_URL="postgresql://workspace_owner:$owner_password@$database_address/outreached_test?sslmode=verify-full&sslrootcert=$test_root/tls/server.crt"
+  export WORKSPACE_TEST_RUNTIME_PASSWORD="$runtime_password"
+  export WORKSPACE_TEST_POSTGRES_ROOT_CERT="$test_root/tls/server.crt"
+  uv run pytest tests/test_serverless_contract.py -q
+  export WORKSPACE_DATABASE_URL="postgresql://outreached_app:$runtime_password@$database_address/outreached_test?sslmode=verify-full&sslrootcert=$test_root/tls/server.crt"
+  pnpm --dir frontend test
+fi
+echo "PASS $container_mode production image: TLS PostgreSQL, auth, CSRF, business flow and restart persistence"

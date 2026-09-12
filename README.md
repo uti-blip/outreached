@@ -47,9 +47,9 @@ La CI reproduit ces contrôles et teste les deux stockages, le contrôle d’acc
 
 ## Production
 
-Le conteneur est préparé pour **Render Free + Neon Free**. `deploy/Dockerfile.free` réunit Next.js et FastAPI dans un conteneur sans privilèges ; seul Next.js est public. La base PostgreSQL externe conserve les données lors des redémarrages et mises en veille. `render.yaml` fixe explicitement le plan gratuit et la région Francfort. **La publication Render reste bloquée** : le 12 septembre 2026, l’API et l’interface demandent une carte même pour créer le service Free dans le workspace dédié. Aucun service public fonctionnel n’est confirmé à ce stade.
+La cible gratuite est **Netlify Free + Neon Free**. Next.js sert l'interface et l'API directement avec `WORKSPACE_BACKEND=postgres` ; PostgreSQL conserve les données entre les déploiements. Le projet Netlify `outreached` est créé ; la publication et son smoke authentifié restent à vérifier.
 
-Le gratuit impose des limites de disponibilité : Render met le service en veille après 15 minutes sans trafic, avec un réveil d’environ une minute. Utiliser un workspace Render sans carte bancaire et conserver Neon sur Free pour que les dépassements interrompent le service sans facturation automatique. Cette configuration convient à un petit espace manuel ; elle ne promet pas de disponibilité continue.
+Netlify suspend les projets lorsque les 300 crédits mensuels sont épuisés. Le compte est Free, sans carte et sans recharge automatique. La base Neon est à Francfort ; les fonctions Netlify Free tournent en Ohio. Cette configuration ne promet ni une disponibilité continue, ni un traitement exclusivement européen.
 
 Le `Dockerfile` historique reste disponible pour une installation SQLite avec un vrai volume `/data`. Aucune base locale n’est copiée dans les images.
 
@@ -67,7 +67,8 @@ Les migrations `migrations/001-003` concernent l’ancien prototype Supabase. Le
 | `backend/app/campaign_runner.py` | Prévisualisation de l’ancien pipeline |
 | `scripts/workspace_backup.py` | Sauvegarde/restauration SQLite vérifiée |
 | `scripts/workspace_postgres.py` | Migration privée, sauvegarde portable, restauration sans écrasement |
-| `deploy/Dockerfile.free` / `render.yaml` | Application combinée sur l’offre gratuite |
+| `netlify.toml` | Publication Next.js et API PostgreSQL sur Netlify Free |
+| `deploy/Dockerfile.free` / `render.yaml` | Alternative conteneur Next.js/FastAPI |
 | `tests` / `frontend/tests` | Régressions métier et sécurité |
 
 Le SaaS multi-utilisateur reste dans `BACKLOG_PHASE_2.md`.

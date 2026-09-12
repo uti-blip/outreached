@@ -143,9 +143,9 @@ def test_csv_and_workspace_read_queries_are_bounded_and_fields_are_preserved(siz
     with TestClient(create_app()) as client:
         exported = client.get("/api/export/leads.csv")
         assert exported.status_code == 200
-        assert (
-            len(statements) <= 2
-        ), f"CSV export issued {len(statements)} reads for {size} prospects"
+        assert len(statements) <= 2, (
+            f"CSV export issued {len(statements)} reads for {size} prospects"
+        )
         assert exported.content.startswith(b"\xef\xbb\xbf")
         assert (
             exported.headers["content-disposition"] == 'attachment; filename="lexia-prospects.csv"'
@@ -157,9 +157,9 @@ def test_csv_and_workspace_read_queries_are_bounded_and_fields_are_preserved(siz
         statements.clear()
         response = client.get("/api/workspace")
         assert response.status_code == 200
-        assert (
-            len(statements) <= 4
-        ), f"Workspace issued {len(statements)} reads for {size} prospects"
+        assert len(statements) <= 4, (
+            f"Workspace issued {len(statements)} reads for {size} prospects"
+        )
         workspace = response.json()
         assert workspace["profile"] == profile
         assert [lead["id"] for lead in workspace["leads"]] == list(reversed(summaries))

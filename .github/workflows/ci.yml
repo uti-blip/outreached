@@ -106,8 +106,33 @@ jobs:
   free-container:
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [combined, serverless]
+    env:
+      WORKSPACE_CONTAINER_MODE: ${{ matrix.mode }}
     steps:
       - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        if: matrix.mode == 'serverless'
+        with:
+          version: '0.11.3'
+          python-version: '3.12'
+      - run: uv sync --frozen --group dev
+        if: matrix.mode == 'serverless'
+      - uses: pnpm/action-setup@v4
+        if: matrix.mode == 'serverless'
+        with:
+          version: '10.33.0'
+      - uses: actions/setup-node@v4
+        if: matrix.mode == 'serverless'
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - run: pnpm --dir frontend install --frozen-lockfile
+        if: matrix.mode == 'serverless'
       - name: Verify combined image with persistent TLS PostgreSQL
         shell: bash
         run: bash scripts/check_free_container.sh

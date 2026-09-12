@@ -200,6 +200,33 @@ def test_restore_rolls_back_all_rows_on_broken_reference(postgres_workspace, tmp
         assert conn.execute("SELECT COUNT(*) FROM profile").fetchone()[0] == 0
 
 
+def test_distributed_login_state_is_bounded_private_and_excluded_from_business_backups(
+    postgres_workspace, tmp_path
+):
+    state = {"v": 1, "global": {"count": 1, "reset": 1}, "clients": {}}
+    with connect() as conn:
+        assert conn.execute("SELECT state FROM login_rate_limit WHERE id=1").fetchone()[0] == {}
+        conn.execute("UPDATE login_rate_limit SET state=?::jsonb WHERE id=1", (json.dumps(state),))
+    migrate(postgres_workspace["owner"])
+    with connect(write=False) as conn:
+        assert conn.execute("SELECT state FROM login_rate_limit WHERE id=1").fetchone()[0] == state
+    destination = tmp_path / "business-backup.json"
+    counts = backup(destination)
+    assert "login_rate_limit" not in counts
+    assert "login_rate_limit" not in json.loads(destination.read_text())["data"]
+    for statement, values in (
+        ("DELETE FROM login_rate_limit", None),
+        ("INSERT INTO login_rate_limit(id,state) VALUES(2,'{}')", None),
+        ("UPDATE login_rate_limit SET state='[]'::jsonb WHERE id=1", None),
+        (
+            "UPDATE login_rate_limit SET state=?::jsonb WHERE id=1",
+            (json.dumps({"oversized": "x" * 262144}),),
+        ),
+    ):
+        with pytest.raises(WorkspaceStoreError), connect() as conn:
+            conn.execute(statement, values)
+
+
 def test_migration_is_idempotent_and_does_not_rotate_runtime_password(postgres_workspace):
     migrate(postgres_workspace["owner"])
     init_workspace()

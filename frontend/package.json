@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "node --experimental-strip-types --test tests/*.test.mts",
+    "test": "node --conditions=react-server --experimental-strip-types --test --test-concurrency=1 tests/*.test.mts",
     "typecheck": "next typegen && tsc --noEmit",
     "auth:setup": "node scripts/setup-auth.mjs"
   },
@@ -15,8 +15,10 @@
     "@base-ui/react": "^1.5.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "csv-parse": "7.0.2",
     "lucide-react": "^1.17.0",
     "next": "16.3.5",
+    "pg": "8.23.0",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "server-only": "^0.0.1",
@@ -26,6 +28,7 @@
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
+    "@types/pg": "8.23.1",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",

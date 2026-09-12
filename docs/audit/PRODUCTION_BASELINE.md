@@ -4,7 +4,7 @@ Date : 12 septembre 2026. Base Git initiale : `986fafb`. L’audit inclut les mo
 
 ## Verdict en cours de validation
 
-Le périmètre livré est l’espace privé de prospection manuelle. L’audit initial est fusionné dans la [PR #1](https://github.com/uti-blip/outreached/pull/1). À la demande de l’utilisateur, la cible devient **Render Free + Neon Free**, sans Railway ni abonnement. Le service combiné et PostgreSQL sont en cours de validation ; une production opérationnelle ne sera déclarée qu’après contrôle du déploiement public.
+Le périmètre livré est l’espace privé de prospection manuelle. L’audit initial est fusionné dans la [PR #1](https://github.com/uti-blip/outreached/pull/1). À la demande de l’utilisateur, la cible devient **Netlify Free + Neon Free**, sans Railway ni abonnement. Le port des routes métier dans Next.js est en cours de validation ; une production opérationnelle ne sera déclarée qu’après contrôle du déploiement public.
 
 ## Constats et corrections
 
@@ -46,10 +46,16 @@ Ces preuves décrivent la première phase d’audit. L’essai Railway expiré a
 - Le healthcheck public vérifie maintenant la configuration, l’API interne et son stockage ; un HTTP 200 de simple liveness ne suffit plus.
 - 20 tests frontend et 5 tests du superviseur réussis ; lint, TypeScript et build standalone réussis. Validation complète du conteneur PostgreSQL suivie par la CI.
 
+## Passage à Netlify
+
+Render a finalement exigé une carte dans l’API et l’interface même pour créer un service Free. Aucun service n’a été créé. Le compte Netlify existant a été vérifié Free, sans carte, avec 300 crédits et recharge automatique désactivée. Le projet `outreached` a été créé. La base Neon est migrée et la connexion du rôle `outreached_app` vérifiée ; les six tables métier sont vides, comme la base locale.
+
+Les routes manuelles sont portées dans Next.js, avec le même schéma et les mêmes contrats métier. Leur validation HTTP réelle et le déploiement public sont encore requis. Les adaptateurs Python et conteneurs restent disponibles.
+
 ## Limites explicites
 
 L’espace est mono-utilisateur. Aucun paiement, enrichissement Apollo, génération IA distante, envoi automatique, suivi d’ouverture ou webhook fournisseur n’est activé. Ces fonctions exigent des intégrations réelles, une persistance des messages, idempotence et protections métier avant activation. Un booléen commercial ne suffit pas à rendre les stubs utilisables.
 
-La limitation de connexion est propre à l’unique instance et repart de zéro au redémarrage. Render Free se met en veille après 15 minutes et son réveil peut prendre environ une minute ; les quotas gratuits peuvent suspendre le service. Neon Free conserve les données au repos, avec une fenêtre courte de restauration temporelle à compléter par des copies externes. Cette configuration ne garantit pas une disponibilité continue. La haute disponibilité et le multi-tenant restent hors du périmètre existant.
+Le limiteur distribué pour Netlify est en cours de vérification. Netlify Free suspend les projets à épuisement des crédits ; aucun dépassement payant n’est activé. Neon Free conserve les données au repos, avec une fenêtre courte de restauration temporelle à compléter par des copies externes. Cette configuration ne garantit pas une disponibilité continue. La haute disponibilité et le multi-tenant restent hors du périmètre existant.
 
 Déploiement, sauvegardes et retour arrière : [DEPLOYMENT.md](../DEPLOYMENT.md).

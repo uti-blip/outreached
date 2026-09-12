@@ -38,5 +38,14 @@ CREATE TABLE IF NOT EXISTS outreached_workspace.events (
     lead_id TEXT NOT NULL REFERENCES outreached_workspace.leads(id) ON DELETE CASCADE,
     kind TEXT NOT NULL, detail TEXT NOT NULL, created_at TEXT NOT NULL
 );
+-- Shared by stateless login handlers. Deliberately excluded from business backups.
+-- One bounded object contains expiring global counters and hashed client identities.
+CREATE TABLE IF NOT EXISTS outreached_workspace.login_rate_limit (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    state JSONB NOT NULL DEFAULT '{}'::jsonb
+        CHECK (jsonb_typeof(state) = 'object' AND octet_length(state::text) <= 262144)
+);
+INSERT INTO outreached_workspace.login_rate_limit(id,state) VALUES (1,'{}'::jsonb)
+ON CONFLICT(id) DO NOTHING;
 INSERT INTO outreached_workspace.schema_version(id,version) VALUES (1,1)
 ON CONFLICT(id) DO NOTHING;

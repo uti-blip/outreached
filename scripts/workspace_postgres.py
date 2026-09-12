@@ -158,7 +158,7 @@ def migrate(url: str, runtime_password: str | None = None) -> None:
                     )
             cursor.execute("GRANT USAGE ON SCHEMA outreached_workspace TO outreached_app")
             cursor.execute("GRANT SELECT ON outreached_workspace.schema_version TO outreached_app")
-            for table in WORKSPACE_TABLES:
+            for table in (*WORKSPACE_TABLES, "login_rate_limit"):
                 relation = sql.Identifier(POSTGRES_SCHEMA, table)
                 cursor.execute(sql.SQL("ALTER TABLE {} ENABLE ROW LEVEL SECURITY").format(relation))
                 cursor.execute(
