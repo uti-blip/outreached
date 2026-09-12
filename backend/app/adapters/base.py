@@ -9,6 +9,15 @@ All adapters follow the same pattern:
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 
+
+class ProviderCapabilityUnavailableError(RuntimeError):
+    """The requested provider operation has not been implemented and verified."""
+
+
+class LiveSendNotConfiguredError(ProviderCapabilityUnavailableError):
+    """Live sending is unavailable, regardless of installed credentials."""
+
+
 # ── Email ─────────────────────────────────────────────
 
 
@@ -16,7 +25,7 @@ from dataclasses import dataclass, field
 class EmailResult:
     success: bool
     external_id: str | None = None
-    status: str = "sent"
+    status: str = "unknown"
     error: str | None = None
 
 
@@ -78,6 +87,7 @@ class LinkedInResult:
     external_id: str | None = None
     action: str = ""  # connection_request, message, inmail
     error: str | None = None
+    status: str = "unknown"
 
 
 class LinkedInAdapter(ABC):

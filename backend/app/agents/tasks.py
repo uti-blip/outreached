@@ -11,5 +11,7 @@ def ping() -> str:
 
 @celery_app.task(name="agent.sourcing")
 def agent_sourcing(lead_data: dict) -> dict:
-    """Stub: sourcing agent (L3)."""
-    return {"status": "ok", "agent": "sourcing", "lead": lead_data.get("email", "")}
+    """Reject an unavailable task instead of fabricating a sourcing success."""
+    from backend.app.adapters.base import ProviderCapabilityUnavailableError
+
+    raise ProviderCapabilityUnavailableError("Le sourcing asynchrone n’est pas implémenté.")

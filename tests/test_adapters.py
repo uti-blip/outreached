@@ -40,7 +40,7 @@ class TestEmailAdapter:
     async def test_check_status(self):
         adapter = MockEmailAdapter()
         status = await adapter.check_status("any-id")
-        assert status == "delivered"
+        assert status == "unknown"
 
 
 class TestEnrichmentAdapter:

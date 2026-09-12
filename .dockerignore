@@ -1,0 +1,13 @@
+**
+!pyproject.toml
+!uv.lock
+!backend/
+!backend/**
+!scripts/
+!scripts/serve.py
+!scripts/workspace_backup.py
+backend/**/*.db
+backend/**/*.db-*
+backend/**/__pycache__/
+backend/**/*.pyc
+backend/**/*.sqlite3

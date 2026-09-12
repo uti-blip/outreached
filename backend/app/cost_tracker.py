@@ -1,7 +1,7 @@
 """Cost tracker — async logger for agent_runs table.
 
-Logs tokens, cost, latency per agent run. Serves billing AND margin observability.
-Async fire-and-forget — zero latency added to the critical path.
+Logs reported tokens, estimated cost and latency per agent run. Persistence is
+awaited and failures are surfaced; this is not a provider billing reconciliation.
 """
 
 import uuid
@@ -20,32 +20,29 @@ async def log_agent_run(
     campaign_id: str | None = None,
     metadata: dict | None = None,
 ) -> str:
-    """Log an agent run. Async, non-blocking."""
+    """Log an agent run and require durable success from the selected store."""
     import json
 
     run_id = str(uuid.uuid4())
 
-    # Try Supabase first
+    # A configured store must not fail over silently to an unrelated database.
     client = get_supabase()
     if client:
-        try:
-            client.table("agent_runs").insert(
-                {
-                    "id": run_id,
-                    "tenant_id": tenant_id,
-                    "campaign_id": campaign_id,
-                    "agent_type": agent_type,
-                    "model": model,
-                    "input_tokens": input_tokens,
-                    "output_tokens": output_tokens,
-                    "cost_eur": cost_eur,
-                    "latency_ms": latency_ms,
-                    "metadata": metadata or {},
-                }
-            ).execute()
-            return run_id
-        except Exception:
-            pass  # fall through to SQLite
+        client.table("agent_runs").insert(
+            {
+                "id": run_id,
+                "tenant_id": tenant_id,
+                "campaign_id": campaign_id,
+                "agent_type": agent_type,
+                "model": model,
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+                "cost_eur": cost_eur,
+                "latency_ms": latency_ms,
+                "metadata": metadata or {},
+            }
+        ).execute()
+        return run_id
 
     # SQLite fallback
     conn = _get_sqlite()
@@ -75,7 +72,9 @@ async def log_agent_run(
 
 
 def get_campaign_costs(tenant_id: str, campaign_id: str) -> dict:
-    """Return total cost stats for a campaign."""
+    """Return local development costs without reading from a different store."""
+    if get_supabase() is not None:
+        raise NotImplementedError("Supabase campaign cost aggregation is not implemented")
     conn = _get_sqlite()
     try:
         row = conn.execute(

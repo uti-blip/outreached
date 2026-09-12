@@ -1,36 +1,45 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Lexia frontend
 
-## Getting Started
+Private, single-workspace prospecting interface. Messages are prepared here and sent manually from the owner's email client. The frontend does not send campaigns automatically.
 
-First, run the development server:
+Use Node 22 (22.14 or newer) and pnpm 10.33.0. From the repository root, `./scripts/dev.sh` starts the local application. See the repository deployment guide for persistent backend storage and hosting.
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+## Authentication setup
+
+From the repository root:
+
+```sh
+node frontend/scripts/setup-auth.mjs --output .runtime/auth --user admin --origin http://localhost:3000 --backend-url http://127.0.0.1:8001
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+The helper writes `frontend.env` and `workspace-login.txt` with owner-only file permissions and refuses to overwrite existing files. It prints file locations, never secrets. Keep the credentials in a password manager and keep generated files outside version control. The generated `WORKSPACE_API_KEY` must match the backend key.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Configure the server environment (never `NEXT_PUBLIC_*`):
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| Variable | Purpose |
+| --- | --- |
+| `WORKSPACE_LOGIN_USER` | Workspace owner's login name |
+| `WORKSPACE_PASSWORD_HASH` | `scrypt:16384:8:1:<32 hex salt>:<128 hex hash>` |
+| `WORKSPACE_SESSION_SECRET` | Random signing secret, at least 32 characters |
+| `WORKSPACE_PUBLIC_ORIGIN` | Exact frontend origin; HTTPS required in production |
+| `WORKSPACE_API_KEY` | Shared backend credential |
+| `BACKEND_URL` | Backend origin; HTTPS required in production |
 
-## Learn More
+The browser receives an 8-hour signed HttpOnly, SameSite=Strict session cookie, with Secure and the `__Host-` prefix in production. Every workspace API request verifies it. Writes also require the configured Origin and a session-bound CSRF token. Credential rotation revokes all existing sessions; logging out clears the current browser cookie. A copied cookie remains valid until expiry or credential rotation.
 
-To learn more about Next.js, take a look at the following resources:
+Login attempts have bounded per-instance throttling. Configure rate limiting for `/api/auth/login` at the deployment ingress as well, because serverless instances do not share counters. This application has one workspace owner account, no self-service registration or password recovery.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Only the manual workspace API is proxied. The automated campaign runner is not exposed through this frontend. Backend credentials, network details, and raw upstream server failures are not returned to the browser.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Verification
 
-## Deploy on Vercel
+```sh
+pnpm install --frozen-lockfile
+pnpm test
+pnpm lint
+pnpm typecheck
+pnpm build
+pnpm audit --prod
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+`GET /health` checks the frontend process only. Backend readiness and persistent storage must be checked separately.

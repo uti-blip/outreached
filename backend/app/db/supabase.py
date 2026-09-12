@@ -13,8 +13,13 @@ _use_supabase = None  # tri-state: None (unchecked), True, False
 
 
 def get_supabase():
-    """Return Supabase client or None if unavailable."""
+    """Return the configured client; only unconfigured development uses SQLite."""
     global _client, _use_supabase
+
+    if bool(settings.supabase_url) != bool(settings.supabase_service_key):
+        raise RuntimeError("SUPABASE_URL and SUPABASE_SERVICE_KEY must be configured together")
+    if settings.app_env == "production" and not settings.supabase_url:
+        raise RuntimeError("The legacy agent store requires Supabase in production")
 
     if _use_supabase is not None:
         return _client if _use_supabase else None
@@ -31,10 +36,10 @@ def get_supabase():
         # Quick check: list tenants table (may fail if table doesn't exist yet)
         _use_supabase = True
         return _client
-    except Exception:
-        _use_supabase = False
+    except Exception as exc:
+        _use_supabase = None
         _client = None
-        return None
+        raise RuntimeError("Supabase client initialization failed; no SQLite fallback") from exc
 
 
 # ── SQLite fallback (dev/testing) ──────────────────────
@@ -42,7 +47,9 @@ DB_PATH = Path(__file__).resolve().parent.parent.parent / "dev.db"
 
 
 def _get_sqlite() -> sqlite3.Connection:
-    """Get SQLite connection with row factory."""
+    """Get the legacy development DB; never use it as a production fallback."""
+    if settings.app_env == "production":
+        raise RuntimeError("The legacy SQLite agent store is unavailable in production")
     conn = sqlite3.connect(str(DB_PATH))
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
