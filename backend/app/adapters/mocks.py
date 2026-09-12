@@ -3,6 +3,9 @@
 These return controlled, deterministic data with zero network calls.
 """
 
+import hashlib
+import json
+
 from backend.app.adapters.base import (
     EmailAdapter,
     EmailResult,
@@ -11,6 +14,12 @@ from backend.app.adapters.base import (
     LinkedInAdapter,
     LinkedInResult,
 )
+
+
+def _preview_id(prefix: str, *values: str) -> str:
+    payload = json.dumps(values, ensure_ascii=False).encode()
+    return f"{prefix}-{hashlib.sha256(payload).hexdigest()[:16]}"
+
 
 # ── Email mock ────────────────────────────────────────
 
@@ -29,16 +38,17 @@ class MockEmailAdapter(EmailAdapter):
         if dry_run:
             return EmailResult(
                 success=True,
-                external_id=f"mock-email-{hash(to_email) & 0xFFFF:04x}",
+                external_id=_preview_id("mock-email", to_email, subject, body, from_email),
                 status="dry_run",
             )
         return EmailResult(
             success=False,
+            status="blocked",
             error="MockEmailAdapter: live mode disabled — no real sends in test/dev",
         )
 
     async def check_status(self, external_id: str) -> str:
-        return "delivered"
+        return "dry_run" if external_id.startswith("mock-email-") else "unknown"
 
 
 # ── Enrichment mock ───────────────────────────────────
@@ -99,11 +109,13 @@ class MockLinkedInAdapter(LinkedInAdapter):
         if dry_run:
             return LinkedInResult(
                 success=True,
-                external_id=f"mock-li-conn-{hash(linkedin_url) & 0xFFFF:04x}",
+                external_id=_preview_id("mock-li-conn", linkedin_url, message),
                 action="connection_request",
+                status="dry_run",
             )
         return LinkedInResult(
             success=False,
+            status="blocked",
             error="MockLinkedInAdapter: live mode disabled",
         )
 
@@ -116,10 +128,12 @@ class MockLinkedInAdapter(LinkedInAdapter):
         if dry_run:
             return LinkedInResult(
                 success=True,
-                external_id=f"mock-li-msg-{hash(linkedin_url) & 0xFFFF:04x}",
+                external_id=_preview_id("mock-li-msg", linkedin_url, message),
                 action="message",
+                status="dry_run",
             )
         return LinkedInResult(
             success=False,
+            status="blocked",
             error="MockLinkedInAdapter: live mode disabled",
         )

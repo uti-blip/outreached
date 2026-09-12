@@ -86,19 +86,19 @@ class InferenceRouter:
         Fallback chain: complexity → next simpler complexity → next simpler.
         If no providers at all, raise ValueError.
         """
+        providers = self.get_provider_chain(agent_type)
+        if not providers:
+            raise ValueError("No LLM providers configured. Set at least one API key.")
+        return providers[0]
+
+    def get_provider_chain(self, agent_type: str) -> list[LLMProvider]:
+        """Return configured providers once each, including injected test providers."""
         complexity = AGENT_COMPLEXITY.get(agent_type, TaskComplexity.VOLUME)
         preferred = COMPLEXITY_PROVIDER[complexity]
-
-        # Try the preferred provider
-        if self._providers.get(preferred):
-            return self._providers[preferred]
-
-        # Fallback: try all configured providers in order of cost (cheapest first)
-        for kind in (ProviderKind.DEEPSEEK, ProviderKind.KIMI, ProviderKind.ANTHROPIC):
-            if self._providers.get(kind):
-                return self._providers[kind]
-
-        raise ValueError("No LLM providers configured. Set at least one API key.")
+        order = dict.fromkeys(
+            (preferred, ProviderKind.DEEPSEEK, ProviderKind.KIMI, ProviderKind.ANTHROPIC)
+        )
+        return [provider for kind in order if (provider := self._providers.get(kind)) is not None]
 
     def get_model_for_agent(self, agent_type: str) -> str:
         """Return the model name that will be used for this agent type."""

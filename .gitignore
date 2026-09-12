@@ -9,8 +9,7 @@ build/
 .venv/
 venv/
 
-# uv
-uv.lock
+# Lockfiles are versioned for reproducible production builds.
 
 # Environment
 .env
@@ -41,8 +40,18 @@ htmlcov/
 
 # SQLite
 *.db
+*.db-wal
+*.db-shm
 *.sqlite3
 
 # Logs
 *.log
 logs/
+
+# Generated tooling and deployment credentials
+.ruff_cache/
+.vercel/
+.railway/
+.runtime/
+backups/
+*.tsbuildinfo

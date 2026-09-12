@@ -1,111 +1,67 @@
-# Outreached — B2B Outbound Orchestration (Phase 1)
+# Outreached — espace de prospection Lexia
 
-> **Phase 1: Agency-first foundation.** Playbook vertical + orchestration IA + dry-run pipeline.
-> Phase 2 (SaaS multi-tenant) → `BACKLOG_PHASE_2.md`
+Application privée pour gérer des prospects B2B, préparer des séquences et suivre les envois déclarés. Un utilisateur, un espace, une base SQLite persistante.
 
-## Quick Start
+## Fonctionnement
+
+- Fiches prospects, import CSV, déduplication par email/SIREN et recherche dans l’Annuaire des Entreprises.
+- Brouillons personnalisables, préparation dans votre messagerie et relances manuelles.
+- Oppositions persistantes, historique et exports CSV/JSON.
+- Connexion par identifiant/mot de passe, session signée HttpOnly et protection CSRF.
+- Aucune clé de service dans le navigateur ; aucune IA payante nécessaire.
+
+Un envoi déclaré ne prouve ni délivrance ni lecture. Les réponses et rendez-vous sont renseignés manuellement. L’ancienne orchestration IA reste expérimentale : le mode démo est sans réseau ni écriture ; les transports automatiques incomplets refusent les envois réels, même avec des clés configurées.
+
+## Démarrage local
+
+Prérequis : Python 3.12+, uv, Node.js 22 et pnpm 10.33.0.
 
 ```bash
-# 1. Clone & setup
-git clone <repo-url> outreached && cd outreached
-cp .env.example .env   # edit with your API keys
+uv sync --frozen --group dev
+pnpm --dir frontend install --frozen-lockfile
+./scripts/dev.sh
+```
 
-# 2. Backend
-uv sync --group dev
-uv run uvicorn backend.app.main:app --port 8001
+Ouvrir http://localhost:3000. Le premier démarrage crée les identifiants dans `.runtime/auth/workspace-login.txt` et une configuration privée dans le même dossier, exclus de Git. La base locale existante `backend/lexia.db` est conservée. Aucun compte fournisseur n’est nécessaire.
 
-# 3. Frontend
-cd frontend && pnpm install && pnpm dev
-# Opens on http://localhost:3000/campaign
-
-# 4. Smoke test (mock mode — no API keys needed)
+```bash
+# Prévisualisation déterministe sans appel IA ni envoi
 uv run python -m backend.app.cli run-campaign \
-    --seed-list tests/fixtures/seed_saas_fr.json
-
-# 5. Smartlead warmup (requires Smartlead API key)
-uv run python scripts/smartlead_setup.py provision \
-    --api-key sl_... --domain votre-domaine-cold.fr
-
-# 6. Run all tests
-uv run pytest
+  --seed-list tests/fixtures/seed_saas_fr.json --dry-run
 ```
 
-## Stack
-
-| Layer | Tech | Notes |
-|-------|------|-------|
-| Backend API | FastAPI (Python 3.12) | `uv` package manager |
-| Orchestration | Celery + Redis | Fan-out agents |
-| Database | Supabase (Postgres + pgvector) | Region EU, RLS on all tables |
-| LLM Inference | DeepSeek v4-flash / Kimi K2.6 / Claude Sonnet | Tiered routing |
-| Email | Smartlead API | Dry-run by default |
-| Enrichment | Apollo API | Mock in tests |
-| LinkedIn | Unipile API | Mock in tests |
-| Observability | Langfuse | Branché sur `agent_runs` |
-
-## Architecture
-
-```
-seed_list.json → CLI (run-campaign)
-                    │
-                    ├─ Sourcing (mock/Live DeepSeek flash)
-                    ├─ Enrichment (mock/Live)
-                    ├─ ICP Scoring (mock/Live Kimi K2.6)
-                    ├─ Sequence Writer (mock/Live + RAG playbook)
-                    ├─ Send (Smartlead/LinkedIn, DRY-RUN)
-                    └─ Reply Classifier (mock/Live)
-                         │
-                         └─ agent_runs (cost tracking)
-```
-
-## Run Tests
+## Validation
 
 ```bash
-uv run pytest                     # All tests (mock, no API keys)
-uv run pytest -k "not celery"    # Skip Redis-dependent test
+uv run ruff check .
+uv run ruff format --check .
+uv run pytest
+uv run python scripts/prove_production_gates.py
+pnpm --dir frontend lint
+pnpm --dir frontend test
+pnpm --dir frontend typecheck
+pnpm --dir frontend build
 ```
 
-## Environment Variables
+La CI reproduit ces contrôles et teste un conteneur avec un volume, le contrôle d’accès, la sauvegarde/restauration et le redémarrage. Le test Redis est optionnel : Redis/Celery ne sont pas requis par le workspace.
 
-See `.env.example`. Required for live mode:
-- `DEEPSEEK_API_KEY`
-- `KIMI_API_KEY`
-- `ANTHROPIC_API_KEY`
+## Production
 
-Optional (adapters):
-- `SMARTLEAD_API_KEY`
-- `APOLLO_API_KEY`
-- `UNIPILE_API_KEY`
+Frontend Next.js sur Vercel, API FastAPI via `Dockerfile` et `railway.json`. Le conteneur refuse de démarrer sans volume monté à `/data`, puis lance l’API sans privilèges. Une seule réplique et un worker sont supportés. Aucune base locale n’est copiée dans l’image.
 
-## Guardrails
+Voir [le guide de déploiement et restauration](docs/DEPLOYMENT.md), [le rapport d’audit](docs/audit/PRODUCTION_BASELINE.md), `.env.example` et `frontend/.env.example`.
 
-- **DRY-RUN by default** — never a real email/LinkedIn send in dev/test
-- **No secrets in repo** — `.env` is gitignored
-- **CNIL B2B compliant** — every sequence includes opt-out link + sender identity
-- **RLS isolation** — all Supabase tables are tenant-isolated
-- **Scope: Phase 1 only** — Phase 2 backlog in `BACKLOG_PHASE_2.md`
+Les migrations `migrations/001-003` concernent l’ancien prototype Supabase. Elles ne sont pas nécessaires au workspace SQLite et ne doivent pas être appliquées à une autre application.
 
-## Project Structure
+## Organisation
 
-```
-outreached/
-├── backend/app/
-│   ├── agents/         # 6 AI agent roles
-│   ├── adapters/       # Smartlead, Apollo, Unipile (thin + mocks)
-│   ├── llm/            # Provider abstraction + tiered router
-│   ├── rag/            # Playbook store (pgvector) + saas_fr seed
-│   ├── db/             # Supabase client + SQLite fallback
-│   ├── main.py         # FastAPI app
-│   ├── celery_app.py   # Celery worker config
-│   ├── campaign_runner.py       # Live pipeline
-│   ├── campaign_runner_mock.py  # Mock pipeline (smoke test)
-│   ├── cost_tracker.py # agent_runs logger
-│   └── cli.py          # Typer CLI
-├── migrations/         # Supabase SQL (001-003)
-├── tests/
-│   ├── fixtures/       # seed_saas_fr.json
-│   └── test_*.py      # 31 tests, 30 pass, 1 skip (Redis)
-├── CLAUDE.md           # Dev conventions + guardrails
-├── pyproject.toml      # uv + ruff + pytest config
-└── .env.example        # Documented env vars
-```
+| Chemin | Responsabilité |
+|---|---|
+| `backend/app/prospecting.py` | Prospection, séquences manuelles, exports |
+| `backend/app/workspace_store.py` | Stockage du workspace |
+| `frontend/src/app` | Interface, connexion, proxy authentifié |
+| `backend/app/campaign_runner.py` | Prévisualisation de l’ancien pipeline |
+| `scripts/workspace_backup.py` | Sauvegarde/restauration SQLite vérifiée |
+| `tests` / `frontend/tests` | Régressions métier et sécurité |
+
+Le SaaS multi-utilisateur reste dans `BACKLOG_PHASE_2.md`.

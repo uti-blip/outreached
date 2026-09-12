@@ -1,10 +1,8 @@
-"""RAG playbook store — semantic search over vertical playbook chunks.
+"""Development playbook store with keyword matching only.
 
-Phase 1: SQLite with string matching (pgvector when Supabase is connected).
-The embedding model is abstracted — callers pass pre-computed vectors.
+Vector retrieval and a production Supabase store have not been implemented.
 """
 
-import sqlite3
 import uuid
 
 from backend.app.db.supabase import DB_PATH, _get_sqlite
@@ -13,7 +11,7 @@ from backend.app.db.supabase import DB_PATH, _get_sqlite
 
 
 class PlaybookStore:
-    """Vector store for playbook chunks. SQLite fallback with text search."""
+    """Local development playbook chunks with keyword search."""
 
     def __init__(self):
         self.db_path = DB_PATH
@@ -26,13 +24,14 @@ class PlaybookStore:
         metadata: dict | None = None,
         embedding: list[float] | None = None,
     ) -> str:
-        """Add a chunk. embedding is stored but only used with pgvector."""
+        """Add text; reject embeddings rather than silently discarding them."""
         import json
 
+        if embedding is not None:
+            raise NotImplementedError("Vector embedding storage is not implemented")
         conn = _get_sqlite()
         try:
             chunk_id = str(uuid.uuid4())
-            (sqlite3.Binary(_pack_embedding(embedding)) if embedding else None)
             conn.execute(
                 """INSERT INTO playbook_chunks (id, playbook_id, chunk_type, content, metadata)
                    VALUES (?, ?, ?, ?, ?)""",
@@ -88,7 +87,7 @@ class PlaybookStore:
                     "chunk_type": r["chunk_type"],
                     "content": r["content"],
                     "metadata": r["metadata"],
-                    "similarity": 1.0,  # placeholder for keyword match
+                    "match_type": "keyword",
                 }
                 for r in rows
             ]
@@ -117,16 +116,6 @@ class PlaybookStore:
         for r in results:
             lines.append(f"[{r['chunk_type']}] {r['content']}")
         return "\n\n".join(lines)
-
-
-# ── Helpers ────────────────────────────────────────────
-
-
-def _pack_embedding(vec: list[float]) -> bytes:
-    """Pack float list to bytes for storage."""
-    import struct
-
-    return struct.pack(f"{len(vec)}f", *vec)
 
 
 # ── Singleton ──────────────────────────────────────────

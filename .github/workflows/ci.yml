@@ -1,0 +1,91 @@
+name: Production checks
+
+on:
+  push:
+    branches: [main, 'codex/**']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: '0.11.3'
+          python-version: '3.12'
+      - run: uv sync --frozen --group dev
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run pytest
+      - run: uv run python scripts/prove_production_gates.py
+
+  frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: '10.33.0'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm test
+      - run: pnpm typecheck
+      - run: pnpm build
+
+  container:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build --tag outreached:ci .
+      - name: Check production container and persistent volume
+        shell: bash
+        run: |
+          set -euo pipefail
+          api_key="$(openssl rand -hex 32)"
+          secret="$(openssl rand -hex 32)"
+          echo "::add-mask::$api_key"
+          echo "::add-mask::$secret"
+          docker volume create outreached-ci
+          docker run --detach --name outreached-ci --publish 8001:8001 \
+            --mount source=outreached-ci,target=/data \
+            --env WORKSPACE_API_KEY="$api_key" --env SECRET_KEY="$secret" \
+            --env 'ALLOWED_HOSTS=["api.example.test","healthcheck.railway.app"]' \
+            --env 'ALLOWED_ORIGINS=["https://app.example.test"]' outreached:ci
+          trap 'docker logs outreached-ci; docker rm -f outreached-ci; docker volume rm outreached-ci' EXIT
+          for attempt in {1..40}; do
+            if curl -fsS -H 'Host: api.example.test' http://127.0.0.1:8001/health/ready; then break; fi
+            sleep 2
+          done
+          curl -fsS -H 'Host: api.example.test' http://127.0.0.1:8001/health/ready
+          code=$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: api.example.test' http://127.0.0.1:8001/api/workspace)
+          test "$code" = 401
+          curl -fsS -H 'Host: api.example.test' -H "Authorization: Bearer $api_key" http://127.0.0.1:8001/api/workspace -o /tmp/workspace.json
+          docker exec outreached-ci python scripts/workspace_backup.py backup /data/workspace.db /data/smoke-backup.db
+          docker exec outreached-ci python scripts/workspace_backup.py restore /data/smoke-backup.db /data/smoke-restored.db
+          docker restart outreached-ci
+          for attempt in {1..30}; do
+            if curl -fsS -H 'Host: api.example.test' http://127.0.0.1:8001/health/ready; then break; fi
+            sleep 2
+          done
+          curl -fsS -H 'Host: api.example.test' http://127.0.0.1:8001/health/ready
+          docker exec outreached-ci test -f /data/smoke-restored.db

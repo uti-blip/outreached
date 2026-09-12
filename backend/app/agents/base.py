@@ -45,9 +45,11 @@ class BaseAgent(ABC):
 
         # Try preferred provider, then fall back through the chain
         errors = []
-        for attempt, provider in enumerate(self._get_provider_chain()):
+        input_tokens = output_tokens = latency = 0
+        cost = 0.0
+        start = _time.monotonic()
+        for provider in self._get_provider_chain():
             model = provider.model
-            start = _time.monotonic()
             try:
                 response = await provider.complete(
                     prompt=self._build_prompt(data),
@@ -56,22 +58,24 @@ class BaseAgent(ABC):
                     max_tokens=self._max_tokens(),
                 )
                 latency = int((_time.monotonic() - start) * 1000)
-                cost = provider.cost_eur(response.input_tokens, response.output_tokens)
+                # A completed response can be billable even when JSON is invalid.
+                input_tokens += response.input_tokens
+                output_tokens += response.output_tokens
+                cost += provider.cost_eur(response.input_tokens, response.output_tokens)
                 return AgentResult(
                     agent_type=self.agent_type,
                     success=True,
                     output=self._parse_response(response.text),
                     model=model,
-                    input_tokens=response.input_tokens,
-                    output_tokens=response.output_tokens,
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
                     cost_eur=round(cost, 6),
                     latency_ms=latency,
                 )
-            except Exception as e:
+            except Exception as exc:
                 latency = int((_time.monotonic() - start) * 1000)
-                errors.append(f"[{provider.kind.value}] {e}")
-                if attempt == 0:
-                    continue  # try fallback
+                # Provider errors can contain request data or credential-bearing URLs.
+                errors.append(f"[{provider.kind.value}] {type(exc).__name__}")
 
         # All providers failed
         return AgentResult(
@@ -79,62 +83,16 @@ class BaseAgent(ABC):
             success=False,
             output={},
             model="none",
-            latency_ms=0,
-            error="; ".join(errors),
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            cost_eur=round(cost, 6),
+            latency_ms=latency,
+            error="; ".join(errors) or "No LLM providers configured.",
         )
 
     def _get_provider_chain(self) -> list:
-        """Return providers in fallback order: preferred first, then cheaper alternatives."""
-        from backend.app.llm.provider import (
-            ProviderKind,
-        )
-        from backend.app.llm.router import (
-            AGENT_COMPLEXITY,
-            COMPLEXITY_PROVIDER,
-            TaskComplexity,
-        )
-
-        complexity = AGENT_COMPLEXITY.get(self.agent_type, TaskComplexity.VOLUME)
-        preferred = COMPLEXITY_PROVIDER[complexity]
-
-        providers = []
-        # Preferred
-        providers.append(self._make_provider(preferred))
-        # Fallbacks in cost order
-        for kind in (ProviderKind.DEEPSEEK, ProviderKind.KIMI, ProviderKind.ANTHROPIC):
-            if kind != preferred:
-                p = self._make_provider(kind)
-                if p:
-                    providers.append(p)
-
-        return [p for p in providers if p is not None]
-
-    def _make_provider(self, kind):
-        from backend.app.config import settings
-        from backend.app.llm.provider import (
-            AnthropicProvider,
-            DeepSeekProvider,
-            KimiProvider,
-            ProviderKind,
-        )
-        from backend.app.llm.router import PROVIDER_MODEL
-
-        if kind == ProviderKind.DEEPSEEK and settings.deepseek_api_key:
-            return DeepSeekProvider(
-                api_key=settings.deepseek_api_key,
-                model=PROVIDER_MODEL[ProviderKind.DEEPSEEK],
-            )
-        if kind == ProviderKind.KIMI and settings.kimi_api_key:
-            return KimiProvider(
-                api_key=settings.kimi_api_key,
-                model=PROVIDER_MODEL[ProviderKind.KIMI],
-            )
-        if kind == ProviderKind.ANTHROPIC and settings.anthropic_api_key:
-            return AnthropicProvider(
-                api_key=settings.anthropic_api_key,
-                model=PROVIDER_MODEL[ProviderKind.ANTHROPIC],
-            )
-        return None
+        """Respect the injected router; never recreate providers from ambient credentials."""
+        return self._router.get_provider_chain(self.agent_type)
 
     def _temperature(self) -> float:
         return 0.3  # default: low temp for structured tasks
@@ -143,7 +101,7 @@ class BaseAgent(ABC):
         return 2048
 
     def _parse_response(self, text: str) -> dict:
-        """Try to parse JSON from LLM output; fallback to raw text."""
+        """Require a JSON object instead of claiming unstructured text is valid output."""
         import json
 
         # Try to extract JSON block
@@ -156,10 +114,10 @@ class BaseAgent(ABC):
             text = text[:-3]
         text = text.strip()
 
-        try:
-            return json.loads(text)
-        except json.JSONDecodeError:
-            return {"raw": text}
+        parsed = json.loads(text)
+        if not isinstance(parsed, dict):
+            raise ValueError("Agent output must be a JSON object")
+        return parsed
 
 
 # ── Agent implementations ──────────────────────────────
