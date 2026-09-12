@@ -14,5 +14,7 @@ def isolated_databases(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "supabase_url", "")
     monkeypatch.setattr(settings, "supabase_service_key", "")
     monkeypatch.setattr(settings, "workspace_db_path", str(tmp_path / "lexia.db"))
+    monkeypatch.setattr(settings, "workspace_database_url", "")
+    monkeypatch.setattr(settings, "workspace_database_ssl_root_cert", "")
     monkeypatch.setattr(settings, "workspace_api_key", "")
     monkeypatch.setattr(settings, "app_env", "test")

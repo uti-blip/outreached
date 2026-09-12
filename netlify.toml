@@ -1,0 +1,15 @@
+[build]
+  base = "frontend"
+  command = "pnpm build"
+  publish = ".next"
+
+[build.environment]
+  NODE_VERSION = "22.23.1"
+  PNPM_VERSION = "10.33.0"
+  NEXT_TELEMETRY_DISABLED = "1"
+
+# Next.js Route Handlers run in Netlify's managed Node runtime.
+# Production secrets are configured through Netlify, never in this file.
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"

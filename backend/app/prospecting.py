@@ -14,7 +14,7 @@ from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import Response
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
-from backend.app.workspace_store import connect, get_profile
+from backend.app.workspace_store import connect, get_profile, insert_rows
 
 router = APIRouter(prefix="/api", tags=["Lexia"])
 Status = Literal["new", "contacted", "replied", "meeting", "won", "lost", "do_not_contact"]
@@ -177,6 +177,95 @@ def add_lead(conn, lead):
     return lead_id, True
 
 
+def add_leads(conn, leads: list[LeadInput]):
+    """Preserve ordered deduplication without a database round trip per lead.
+
+    connect() holds the writer lock throughout the read/insert transaction.
+    Database lower() supplies the same company/city comparison semantics as
+    duplicate(), including the SQLite/PostgreSQL Unicode differences.
+    """
+    if len(leads) > 1000:
+        raise ValueError("Import limité à 1 000 lignes par fichier")
+    matches = []
+    # Stay below older SQLite builds' 999-parameter limit. PostgreSQL handles
+    # the entire bounded import in one read plus two bulk inserts.
+    batch_size = 1000 if getattr(conn, "is_postgres", False) else 150
+    for start in range(0, len(leads), batch_size):
+        batch = leads[start : start + batch_size]
+        values = ",".join("(?,?,?,?,?)" for _ in batch)
+        parameters = [
+            value
+            for index, lead in enumerate(batch, start=start)
+            for value in (index, lead.company_name, lead.city, lead.email, lead.siren)
+        ]
+        matches.extend(
+            conn.execute(
+                f"""WITH incoming (position,company_name,city,email,siren) AS (VALUES {values})
+                SELECT i.position, lower(i.company_name) AS company_key,
+                    lower(i.city) AS city_key,
+                    (SELECT l.id FROM leads l WHERE
+                        (l.email<>'' AND l.email=i.email) OR
+                        (l.siren<>'' AND l.siren=i.siren) OR
+                        (lower(l.company_name)=lower(i.company_name) AND
+                         lower(l.city)=lower(i.city) AND l.email=i.email)
+                        LIMIT 1) AS duplicate_id,
+                    EXISTS(SELECT 1 FROM suppressions s
+                        WHERE i.email<>'' AND s.email=i.email) AS suppressed
+                FROM incoming i ORDER BY i.position""",
+                parameters,
+            ).fetchall()
+        )
+    emails, sirens, companies = {}, {}, {}
+    results, rows, events = [], [], []
+    columns = (
+        "id",
+        "company_name",
+        "siren",
+        "contact_name",
+        "email",
+        "website",
+        "city",
+        "activity",
+        "source",
+        "notes",
+        "qualified",
+        "status",
+        "created_at",
+        "updated_at",
+    )
+    for lead, match in zip(leads, matches, strict=True):
+        company_key = (match["company_key"], match["city_key"], lead.email)
+        existing = (
+            match["duplicate_id"]
+            or (emails.get(lead.email) if lead.email else None)
+            or (sirens.get(lead.siren) if lead.siren else None)
+            or companies.get(company_key)
+        )
+        if existing:
+            # A rejected row must not reserve its other, previously unused keys.
+            results.append((existing, False))
+            continue
+        lead_id, timestamp = str(uuid.uuid4()), now()
+        row = {
+            **lead.model_dump(),
+            "id": lead_id,
+            "status": "do_not_contact" if match["suppressed"] else "new",
+            "created_at": timestamp,
+            "updated_at": timestamp,
+        }
+        rows.append(tuple(row[column] for column in columns))
+        events.append((lead_id, "created", "Prospect ajouté", timestamp))
+        if lead.email:
+            emails[lead.email] = lead_id
+        if lead.siren:
+            sirens[lead.siren] = lead_id
+        companies[company_key] = lead_id
+        results.append((lead_id, True))
+    insert_rows(conn, "leads", columns, rows)
+    insert_rows(conn, "events", ("lead_id", "kind", "detail", "created_at"), events)
+    return results
+
+
 def eligibility(lead):
     reasons = []
     if lead["status"] in STOP_STATUSES:
@@ -215,13 +304,19 @@ def serialize_lead(conn, lead, drafts=None):
     return data
 
 
+def _drafts_by_lead(conn):
+    """Fetch summary fields once, without downloading every message body."""
+    by_lead = {}
+    for draft in conn.execute("SELECT lead_id,step,sent_at FROM drafts ORDER BY step").fetchall():
+        by_lead.setdefault(draft["lead_id"], []).append(draft)
+    return by_lead
+
+
 @router.get("/workspace")
 def workspace():
     with connect(write=False) as conn:
         profile = get_profile(conn) or Profile().model_dump()
-        by_lead = {}
-        for draft in conn.execute("SELECT * FROM drafts ORDER BY step").fetchall():
-            by_lead.setdefault(draft["lead_id"], []).append(draft)
+        by_lead = _drafts_by_lead(conn)
         leads = [
             serialize_lead(conn, row, by_lead.get(row["id"], []))
             for row in conn.execute("SELECT * FROM leads ORDER BY created_at DESC").fetchall()
@@ -261,7 +356,7 @@ def create_lead(data: LeadInput):
 @router.post("/leads/batch")
 def create_batch(data: BatchInput):
     with connect() as conn:
-        results = [add_lead(conn, lead) for lead in data.leads]
+        results = add_leads(conn, data.leads)
     return {
         "created": sum(created for _, created in results),
         "duplicates": sum(not created for _, created in results),
@@ -296,7 +391,11 @@ def update_lead(lead_id: str, data: LeadUpdate):
         )
         if data.status == "do_not_contact":
             for email in {old["email"], data.email} - {""}:
-                conn.execute("INSERT OR IGNORE INTO suppressions VALUES (?,?)", (email, now()))
+                conn.execute(
+                    "INSERT INTO suppressions (email,created_at) VALUES (?,?) "
+                    "ON CONFLICT(email) DO NOTHING",
+                    (email, now()),
+                )
         if data.status != old["status"]:
             event(conn, lead_id, "status", data.status)
         event(conn, lead_id, "updated", "Fiche mise à jour")
@@ -399,7 +498,7 @@ def import_csv(data: ImportRequest):
             422, "CSV illisible : vérifiez les séparateurs et les guillemets"
         ) from None
     with connect() as conn:
-        results = [add_lead(conn, lead) for lead in valid]
+        results = add_leads(conn, valid)
     return {
         "created": sum(created for _, created in results),
         "duplicates": sum(not created for _, created in results),
@@ -423,8 +522,9 @@ def export_csv():
     writer = csv.DictWriter(output, fieldnames=fields)
     writer.writeheader()
     with connect(write=False) as conn:
+        by_lead = _drafts_by_lead(conn)
         for row in conn.execute("SELECT * FROM leads ORDER BY created_at").fetchall():
-            lead = serialize_lead(conn, row)
+            lead = serialize_lead(conn, row, by_lead.get(row["id"], []))
             writer.writerow({key: safe_cell(lead.get(key)) for key in fields})
     return Response(
         "\ufeff" + output.getvalue(),

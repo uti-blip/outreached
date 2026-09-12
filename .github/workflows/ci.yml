@@ -17,6 +17,19 @@ jobs:
   backend:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: outreached_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: synthetic-ci-only-password
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres -d outreached_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      WORKSPACE_TEST_POSTGRES_URL: postgresql://postgres:synthetic-ci-only-password@127.0.0.1:5432/outreached_test?sslmode=disable
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
@@ -89,3 +102,37 @@ jobs:
           done
           curl -fsS -H 'Host: api.example.test' http://127.0.0.1:8001/health/ready
           docker exec outreached-ci test -f /data/smoke-restored.db
+
+  free-container:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [combined, serverless]
+    env:
+      WORKSPACE_CONTAINER_MODE: ${{ matrix.mode }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        if: matrix.mode == 'serverless'
+        with:
+          version: '0.11.3'
+          python-version: '3.12'
+      - run: uv sync --frozen --group dev
+        if: matrix.mode == 'serverless'
+      - uses: pnpm/action-setup@v4
+        if: matrix.mode == 'serverless'
+        with:
+          version: '10.33.0'
+      - uses: actions/setup-node@v4
+        if: matrix.mode == 'serverless'
+        with:
+          node-version: '22'
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - run: pnpm --dir frontend install --frozen-lockfile
+        if: matrix.mode == 'serverless'
+      - name: Verify combined image with persistent TLS PostgreSQL
+        shell: bash
+        run: bash scripts/check_free_container.sh

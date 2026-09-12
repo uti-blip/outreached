@@ -1,12 +1,13 @@
 """Application settings — all values from environment, never hardcoded."""
 
 import re
+from contextlib import suppress
 from ipaddress import ip_address
 from pathlib import Path
 from typing import Literal
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
-from pydantic import field_validator
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings
 
 # ── Production safety constants ─────────────────────────
@@ -114,6 +115,8 @@ class Settings(BaseSettings):
     debug: bool = False
     secret_key: str = ""
     workspace_db_path: str = "backend/lexia.db"
+    workspace_database_url: str = Field(default="", repr=False)
+    workspace_database_ssl_root_cert: str = ""
     workspace_api_key: str = ""
     allowed_origins: list[str] = []
     allowed_hosts: list[str] = ["localhost", "127.0.0.1", "testserver"]
@@ -175,7 +178,9 @@ class Settings(BaseSettings):
         _assert_production_origins(self.allowed_origins)
         if self.debug:
             raise RuntimeError("DEBUG doit être désactivé en production")
-        if not Path(self.workspace_db_path).is_absolute():
+        if self.workspace_database_url:
+            validate_database_url(self.workspace_database_url, production=True)
+        elif not Path(self.workspace_db_path).is_absolute():
             raise RuntimeError(
                 "WORKSPACE_DB_PATH doit être un chemin absolu sur un volume persistant en production"
             )
@@ -197,3 +202,36 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+
+def validate_database_url(value: str, *, production: bool = False) -> None:
+    """Only PostgreSQL URLs; never downgrade remote database TLS verification."""
+    try:
+        parsed = urlsplit(value)
+        if (
+            parsed.scheme not in {"postgres", "postgresql"}
+            or not parsed.hostname
+            or not parsed.username
+            or not parsed.password
+            or parsed.path in {"", "/"}
+            or parsed.fragment
+            or any(character.isspace() for character in value)
+        ):
+            raise ValueError
+        if parsed.port is not None and not 1 <= parsed.port <= 65535:
+            raise ValueError
+        local = parsed.hostname == "localhost"
+        with suppress(ValueError):
+            local = local or ip_address(parsed.hostname).is_loopback
+        query = parse_qs(parsed.query, keep_blank_values=True)
+        if any(key not in {"sslmode", "sslrootcert", "channel_binding"} for key in query):
+            raise ValueError
+        if any(len(values) != 1 for values in query.values()):
+            raise ValueError
+        if (production or not local) and query.get("sslmode", ["verify-full"])[0] != "verify-full":
+            raise ValueError
+    except ValueError:
+        raise RuntimeError(
+            "WORKSPACE_DATABASE_URL doit être une URL PostgreSQL complète ; "
+            "TLS sslmode=verify-full est requis hors des tests locaux."
+        ) from None

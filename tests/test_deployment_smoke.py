@@ -48,7 +48,7 @@ class Deployment:
         assert request.url.host == "workspace.example.test"
         assert "authorization" not in request.headers
         if path == "/health":
-            return httpx.Response(200, json={"status": "ok"})
+            return httpx.Response(200, json={"status": "ready"})
         if path == "/campaign":
             return httpx.Response(307, headers={"Location": self.campaign_location})
         authenticated = request.headers.get("cookie") == f"__Host-workspace-session={COOKIE}"
@@ -122,6 +122,35 @@ def test_backend_key_is_optional_but_frontend_authentication_is_not():
     assert len(deployment.run(workspace_api_key=None)) == 6
     assert any(request.url.path == "/api/auth/login" for request in deployment.requests)
     assert all("authorization" not in request.headers for request in deployment.requests)
+
+
+def test_combined_service_checks_authentication_without_exposing_private_backend_key():
+    deployment = Deployment()
+    passed = smoke.verify_deployment(
+        FRONTEND,
+        None,
+        username=USERNAME,
+        password=PASSWORD,
+        workspace_api_key=API_KEY,
+        client_factory=deployment.client_factory,
+    )
+    assert len(passed) == 5
+    assert deployment.clients == [FRONTEND]
+    assert all("authorization" not in request.headers for request in deployment.requests)
+    assert deployment.requests[-1].url.path == "/api/workspace"
+
+
+def test_liveness_alone_is_not_combined_readiness():
+    def factory(**options):
+        return httpx.Client(
+            **options,
+            transport=httpx.MockTransport(lambda _: httpx.Response(200, json={"status": "ok"})),
+        )
+
+    with pytest.raises(smoke.SmokeError, match="état de santé"):
+        smoke.verify_deployment(
+            FRONTEND, None, username=USERNAME, password=PASSWORD, client_factory=factory
+        )
 
 
 @pytest.mark.parametrize("missing", [{"username": None}, {"password": ""}])
