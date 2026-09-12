@@ -2,7 +2,7 @@
 
 ## Cible gratuite : Netlify + Neon
 
-Le projet Netlify `outreached` est créé sur le compte Free existant : 300 crédits mensuels, aucun moyen de paiement, recharge automatique désactivée. L'application est destinée à `https://outreached.netlify.app`. **La création du projet ne prouve pas la publication : celle-ci doit être suivie d'un smoke authentifié réussi.**
+L'application est publiée sur **[outreached.netlify.app](https://outreached.netlify.app)**. Le compte Netlify est Free : 300 crédits mensuels, aucun moyen de paiement, recharge automatique et dépassements désactivés. Le [déploiement de production](https://app.netlify.com/projects/outreached/deploys/6aa56c84875c3a49cbf75eb2) a passé le smoke authentifié le 12 septembre 2026, après validation de la prévisualisation.
 
 Next.js sert l'interface et les routes métier. Avec `WORKSPACE_BACKEND=postgres`, les routes accèdent directement à Neon depuis le serveur après vérification de session et CSRF ; aucun service Python public n'est nécessaire. PostgreSQL utilise le même schéma privé et le même rôle restreint que le backend Python.
 
@@ -54,17 +54,20 @@ Le script crée des fichiers privés en 0600 et refuse leur écrasement. Placer 
 
 Le mode PostgreSQL direct ne nécessite ni `BACKEND_URL`, ni `BACKEND_INTERNAL`, ni `WORKSPACE_API_KEY`. Les clés de fournisseurs payants restent absentes. Les routes historiques de simulation et les envois automatiques ne sont pas exposés.
 
-`netlify.toml` fixe le répertoire `frontend`, le build et les versions Node/pnpm. Netlify applique automatiquement son adaptateur Next.js. Les secrets restent dans les variables du projet, jamais dans ce fichier.
+`netlify.toml` fixe le répertoire `frontend`, le build, les versions Node/pnpm et l'adaptateur Next.js. Le plugin est explicite pour que le CLI détecte correctement l'application dans ce dépôt comprenant aussi Python. Les secrets restent dans les variables du projet, jamais dans ce fichier.
 
 ## Publication et vérification
 
 Faire réussir les contrôles avant de publier la révision. Vérifier dans Netlify que le compte reste Free et sans recharge automatique. Une prévisualisation utilise sa propre origine HTTPS exacte ; ne pas assouplir le contrôle d'origine pour la tester.
 
 ```bash
+cd frontend
 netlify deploy --context deploy-preview --alias audit
 # Après vérifications, publier :
 netlify deploy --prod
 ```
+
+Exécuter ces commandes depuis `frontend` : le CLI résout ainsi correctement le répertoire publié et les fonctions générées. Garder une origine de prévisualisation distincte dans les contextes `dev`, `branch-deploy` et `deploy-preview`, et l'origine principale dans le contexte de production.
 
 Le `/health` public répond `200 {"status":"ready"}` seulement si les identifiants de connexion et le stockage restreint sont opérationnels. Pour contrôler le déploiement :
 

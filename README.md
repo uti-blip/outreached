@@ -47,7 +47,7 @@ La CI reproduit ces contrôles et teste les deux stockages, le contrôle d’acc
 
 ## Production
 
-La cible gratuite est **Netlify Free + Neon Free**. Next.js sert l'interface et l'API directement avec `WORKSPACE_BACKEND=postgres` ; PostgreSQL conserve les données entre les déploiements. Le projet Netlify `outreached` est créé ; la publication et son smoke authentifié restent à vérifier.
+L'application est en ligne sur **[outreached.netlify.app](https://outreached.netlify.app)**, avec **Netlify Free + Neon Free**. Next.js sert l'interface et l'API directement avec `WORKSPACE_BACKEND=postgres` ; PostgreSQL conserve les données entre les déploiements. Le smoke authentifié de production a réussi le 12 septembre 2026 : connexion, stockage, protection CSRF et déconnexion.
 
 Netlify suspend les projets lorsque les 300 crédits mensuels sont épuisés. Le compte est Free, sans carte et sans recharge automatique. La base Neon est à Francfort ; les fonctions Netlify Free tournent en Ohio. Cette configuration ne promet ni une disponibilité continue, ni un traitement exclusivement européen.
 

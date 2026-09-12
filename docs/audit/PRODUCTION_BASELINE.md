@@ -2,9 +2,9 @@
 
 Date : 12 septembre 2026. Base Git initiale : `986fafb`. L’audit inclut les modifications locales préexistantes du workspace Lexia, préservées puis finalisées.
 
-## Verdict en cours de validation
+## Verdict
 
-Le périmètre livré est l’espace privé de prospection manuelle. L’audit initial est fusionné dans la [PR #1](https://github.com/uti-blip/outreached/pull/1). À la demande de l’utilisateur, la cible devient **Netlify Free + Neon Free**, sans Railway ni abonnement. Le port des routes métier dans Next.js est en cours de validation ; une production opérationnelle ne sera déclarée qu’après contrôle du déploiement public.
+L’espace privé de prospection manuelle est opérationnel sur **[outreached.netlify.app](https://outreached.netlify.app)** avec **Netlify Free + Neon Free**, sans Railway ni abonnement. Le smoke authentifié de production a réussi le 12 septembre 2026. L’audit initial est fusionné dans la [PR #1](https://github.com/uti-blip/outreached/pull/1) ; l’adaptation gratuite est présentée dans la [PR #2](https://github.com/uti-blip/outreached/pull/2).
 
 ## Constats et corrections
 
@@ -50,12 +50,25 @@ Ces preuves décrivent la première phase d’audit. L’essai Railway expiré a
 
 Render a finalement exigé une carte dans l’API et l’interface même pour créer un service Free. Aucun service n’a été créé. Le compte Netlify existant a été vérifié Free, sans carte, avec 300 crédits et recharge automatique désactivée. Le projet `outreached` a été créé. La base Neon est migrée et la connexion du rôle `outreached_app` vérifiée ; les six tables métier sont vides, comme la base locale.
 
-Les routes manuelles sont portées dans Next.js, avec le même schéma et les mêmes contrats métier. Leur validation HTTP réelle et le déploiement public sont encore requis. Les adaptateurs Python et conteneurs restent disponibles.
+Les routes manuelles sont portées dans Next.js, avec le même schéma et les mêmes contrats métier. Les adaptateurs Python et conteneurs restent disponibles.
+
+## Preuves de publication
+
+- Révision applicative : `27947e4541750a4988296fd31c2f86935f458dc7`.
+- [CI 34701533948](https://github.com/uti-blip/outreached/actions/runs/34701533948) et [CI de PR 34701569872](https://github.com/uti-blip/outreached/actions/runs/34701569872) : cinq jobs réussis (backend, frontend, conteneur SQLite, conteneur combiné PostgreSQL, Next.js seul).
+- 226 tests Python passent ; les 18 contrats HTTP sont exécutés séparément et Redis reste optionnel.
+- 18 contrats métier réussis par HTTP contre Next.js et PostgreSQL TLS : parcours complet, oppositions, ordre/délai des relances, concurrence et import/réimport de 1 000 lignes.
+- 49 tests frontend réussis en CI avec PostgreSQL réel, sans test ignoré : validation, authentification, stockage et limiteur multiprocessus.
+- Next.js seul a passé le parcours synthétique puis conservé l'intégralité de la sauvegarde après redémarrage de l'application et de PostgreSQL. Aucun processus Python API n'était lancé pour ce contrôle.
+- La prévisualisation puis le [déploiement de production 6aa56c84875c3a49cbf75eb2](https://app.netlify.com/projects/outreached/deploys/6aa56c84875c3a49cbf75eb2) passent le smoke authentifié : health ready, refus anonyme, session/cookie sécurisé, lecture, refus sans CSRF et déconnexion. Aucun prospect réel ou synthétique n'a été ajouté en production.
+- HTTP redirige vers HTTPS ; la connexion TLS, les en-têtes de sécurité et l'absence de cache sur la page de connexion sont vérifiés.
+- Nouvel audit des dépendances frontend de production : aucune vulnérabilité connue.
+- Le contrôle Chrome de la première phase couvrait l'interface conservée. Le contrôle navigateur distant lors de cette publication n'a pas pu être relancé car l'outil n'a pas chargé sa politique de requêtes ; la validation finale repose sur les requêtes HTTP authentifiées et la CI.
 
 ## Limites explicites
 
 L’espace est mono-utilisateur. Aucun paiement, enrichissement Apollo, génération IA distante, envoi automatique, suivi d’ouverture ou webhook fournisseur n’est activé. Ces fonctions exigent des intégrations réelles, une persistance des messages, idempotence et protections métier avant activation. Un booléen commercial ne suffit pas à rendre les stubs utilisables.
 
-Le limiteur distribué pour Netlify est en cours de vérification. Netlify Free suspend les projets à épuisement des crédits ; aucun dépassement payant n’est activé. Neon Free conserve les données au repos, avec une fenêtre courte de restauration temporelle à compléter par des copies externes. Cette configuration ne garantit pas une disponibilité continue. La haute disponibilité et le multi-tenant restent hors du périmètre existant.
+Le limiteur distribué a été vérifié sur plusieurs processus et persiste entre redémarrages. Netlify Free suspend les projets à épuisement des crédits ; aucun dépassement payant n’est activé. Neon Free conserve les données au repos, avec une fenêtre courte de restauration temporelle à compléter par des copies externes. Les fonctions Netlify traitent les requêtes en Ohio et la base est à Francfort : ce n'est pas un traitement exclusivement européen. Cette configuration ne garantit pas une disponibilité continue. La haute disponibilité et le multi-tenant restent hors du périmètre existant.
 
 Déploiement, sauvegardes et retour arrière : [DEPLOYMENT.md](../DEPLOYMENT.md).
