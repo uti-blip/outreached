@@ -1,0 +1,39 @@
+# External PostgreSQL is required: the free web service filesystem is ephemeral.
+# No Render-managed database or paid persistent disk is provisioned here.
+services:
+  - type: web
+    name: outreached
+    runtime: docker
+    plan: free
+    region: frankfurt
+    dockerfilePath: ./deploy/Dockerfile.free
+    dockerContext: .
+    healthCheckPath: /health
+    autoDeployTrigger: checksPass
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "10000"
+      - key: BACKEND_INTERNAL
+        value: "true"
+      - key: BACKEND_URL
+        value: http://127.0.0.1:8001
+      - key: WORKSPACE_DATABASE_URL
+        sync: false
+      - key: WORKSPACE_PUBLIC_ORIGIN
+        sync: false
+      - key: WORKSPACE_LOGIN_USER
+        sync: false
+      - key: WORKSPACE_PASSWORD_HASH
+        sync: false
+      - key: WORKSPACE_SESSION_SECRET
+        generateValue: true
+      - key: WORKSPACE_API_KEY
+        generateValue: true
+      - key: SECRET_KEY
+        generateValue: true
+      - key: COMMERCIAL_LAUNCH_ENABLED
+        value: "false"

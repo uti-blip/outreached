@@ -1,6 +1,6 @@
 # Outreached — espace de prospection Lexia
 
-Application privée pour gérer des prospects B2B, préparer des séquences et suivre les envois déclarés. Un utilisateur, un espace, une base SQLite persistante.
+Application privée pour gérer des prospects B2B, préparer des séquences et suivre les envois déclarés. Un utilisateur, un espace : SQLite en local, PostgreSQL persistant pour l’hébergement gratuit.
 
 ## Fonctionnement
 
@@ -43,15 +43,19 @@ pnpm --dir frontend typecheck
 pnpm --dir frontend build
 ```
 
-La CI reproduit ces contrôles et teste un conteneur avec un volume, le contrôle d’accès, la sauvegarde/restauration et le redémarrage. Le test Redis est optionnel : Redis/Celery ne sont pas requis par le workspace.
+La CI reproduit ces contrôles et teste les deux stockages, le contrôle d’accès, la sauvegarde/restauration et la persistance après redémarrage des conteneurs. Le test Redis est optionnel : Redis/Celery ne sont pas requis par le workspace.
 
 ## Production
 
-Frontend Next.js sur Vercel, API FastAPI via `Dockerfile` et `railway.json`. Le conteneur refuse de démarrer sans volume monté à `/data`, puis lance l’API sans privilèges. Une seule réplique et un worker sont supportés. Aucune base locale n’est copiée dans l’image.
+L’hébergement gratuit utilise **Render Free + Neon Free**. `deploy/Dockerfile.free` réunit Next.js et FastAPI dans un conteneur sans privilèges ; seul Next.js est public. La base PostgreSQL externe conserve les données lors des redémarrages et mises en veille. `render.yaml` fixe explicitement le plan gratuit et la région Francfort.
+
+Le gratuit impose des limites de disponibilité : Render met le service en veille après 15 minutes sans trafic, avec un réveil d’environ une minute. Utiliser un workspace Render sans carte bancaire et conserver Neon sur Free pour que les dépassements interrompent le service sans facturation automatique. Cette configuration convient à un petit espace manuel ; elle ne promet pas de disponibilité continue.
+
+Le `Dockerfile` historique reste disponible pour une installation SQLite avec un vrai volume `/data`. Aucune base locale n’est copiée dans les images.
 
 Voir [le guide de déploiement et restauration](docs/DEPLOYMENT.md), [le rapport d’audit](docs/audit/PRODUCTION_BASELINE.md), `.env.example` et `frontend/.env.example`.
 
-Les migrations `migrations/001-003` concernent l’ancien prototype Supabase. Elles ne sont pas nécessaires au workspace SQLite et ne doivent pas être appliquées à une autre application.
+Les migrations `migrations/001-003` concernent l’ancien prototype Supabase. Le workspace PostgreSQL utilise uniquement `migrations/004_workspace.sql`, appliqué par `scripts/workspace_postgres.py` dans son schéma privé. Ne pas appliquer les anciennes migrations à une autre application.
 
 ## Organisation
 
@@ -62,6 +66,8 @@ Les migrations `migrations/001-003` concernent l’ancien prototype Supabase. El
 | `frontend/src/app` | Interface, connexion, proxy authentifié |
 | `backend/app/campaign_runner.py` | Prévisualisation de l’ancien pipeline |
 | `scripts/workspace_backup.py` | Sauvegarde/restauration SQLite vérifiée |
+| `scripts/workspace_postgres.py` | Migration privée, sauvegarde portable, restauration sans écrasement |
+| `deploy/Dockerfile.free` / `render.yaml` | Application combinée sur l’offre gratuite |
 | `tests` / `frontend/tests` | Régressions métier et sécurité |
 
 Le SaaS multi-utilisateur reste dans `BACKLOG_PHASE_2.md`.

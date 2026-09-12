@@ -1,6 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  output: "standalone",
   poweredByHeader: false,
   async headers() {
     const production = process.env.NODE_ENV === "production";

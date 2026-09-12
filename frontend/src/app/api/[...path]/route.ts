@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { authorize, authError, readLimitedBody } from "@/lib/auth";
-import { allowedProxyRoute, backendOrigin } from "@/lib/proxy-policy";
+import { allowedProxyRoute, backendHostHeader, backendOrigin } from "@/lib/proxy-policy";
+import { backendFetch } from "@/lib/backend-transport";
 
 export const runtime = "nodejs";
 
@@ -24,15 +25,15 @@ async function proxy(request: NextRequest, context: { params: Promise<{ path: st
     return authError("Chemin invalide", 400);
   }
   if (!allowedProxyRoute(request.method, path)) return authError("Ressource introuvable.", 404);
-  const base = backendOrigin(process.env.BACKEND_URL, auth.config.secure);
+  const base = backendOrigin(process.env.BACKEND_URL, auth.config.secure, process.env.BACKEND_INTERNAL === "true");
   if (!base) return authError("Cet espace est temporairement indisponible. Contactez son administrateur.", 503);
   const url = `${base.replace(/\/$/, "")}/api/${path.join("/")}${request.nextUrl.search}`;
   try {
     const body = await readLimitedBody(request, 1500000);
     if (!body) return authError("Fichier trop volumineux (1 Mo maximum)", 413);
-    const response = await fetch(url, {
+    const response = await backendFetch(url, {
       method: request.method,
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${workspaceKey}` },
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${workspaceKey}`, ...backendHostHeader(base, auth.config.origin) },
       body: body.length ? new Uint8Array(body) : undefined,
       signal: AbortSignal.timeout(20000), cache: "no-store", redirect: "error",
     });

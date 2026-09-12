@@ -11,7 +11,7 @@ import argparse
 import os
 import re
 import sys
-from contextlib import suppress
+from contextlib import nullcontext, suppress
 from ipaddress import ip_address
 from urllib.parse import urljoin, urlsplit
 
@@ -88,7 +88,7 @@ def expect_workspace(response: httpx.Response, label: str) -> None:
 
 def verify_deployment(
     frontend_url: str,
-    backend_url: str,
+    backend_url: str | None,
     *,
     username: str | None,
     password: str | None,
@@ -98,7 +98,9 @@ def verify_deployment(
 ) -> list[str]:
     """Run the complete checks or fail; never silently omit authentication."""
     frontend = validate_origin(frontend_url, "Frontend", allow_local=allow_local)
-    backend = validate_origin(backend_url, "Backend", allow_local=allow_local)
+    backend = (
+        validate_origin(backend_url, "Backend", allow_local=allow_local) if backend_url else None
+    )
     if not username or not username.strip() or not password or not password.strip():
         raise SmokeError(
             "WORKSPACE_LOGIN_USER et WORKSPACE_LOGIN_PASSWORD sont requis pour la vérification complète."
@@ -115,21 +117,23 @@ def verify_deployment(
     # Separate cookie jars prevent frontend credentials reaching the backend,
     # even when local test deployments share a hostname on different ports.
     with (
-        client_factory(base_url=backend, **options) as back,
+        client_factory(base_url=backend, **options) if backend else nullcontext() as back,
         client_factory(base_url=frontend, **options) as front,
     ):
-        for path, status in (("/health", "ok"), ("/health/ready", "ready")):
+        for path, status in (("/health", "ok"), ("/health/ready", "ready")) if back else ():
             label = f"Backend {path}"
             response = request(back, "GET", path, label)
             expect_status(response, 200, label)
             if json_object(response, label).get("status") != status:
                 raise SmokeError(f"{label}: état de santé incorrect.")
-        passed.append("backend: liveness et stockage disponibles")
+        if back:
+            passed.append("backend: liveness et stockage disponibles")
 
         label = "Backend anonyme"
-        expect_status(request(back, "GET", "/api/workspace", label), 401, label)
-        passed.append("backend: accès anonyme refusé")
-        if workspace_api_key:
+        if back:
+            expect_status(request(back, "GET", "/api/workspace", label), 401, label)
+            passed.append("backend: accès anonyme refusé")
+        if back and workspace_api_key:
             label = "Backend authentifié"
             expect_workspace(
                 request(
@@ -146,8 +150,10 @@ def verify_deployment(
         label = "Frontend /health"
         response = request(front, "GET", "/health", label)
         expect_status(response, 200, label)
-        if json_object(response, label).get("status") != "ok":
+        if json_object(response, label).get("status") != "ready":
             raise SmokeError(f"{label}: état de santé incorrect.")
+        if not back:
+            passed.append("service combiné: interface, API privée et stockage disponibles")
 
         label = "Page privée anonyme"
         response = request(front, "GET", "/campaign", label)
@@ -235,7 +241,11 @@ def verify_deployment(
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--frontend-url", required=True)
-    parser.add_argument("--backend-url", required=True)
+    architecture = parser.add_mutually_exclusive_group(required=True)
+    architecture.add_argument("--backend-url", help="Separate public backend HTTPS origin")
+    architecture.add_argument(
+        "--combined", action="store_true", help="Single public origin with a private internal API"
+    )
     parser.add_argument(
         "--allow-local", action="store_true", help="Allow HTTP only for loopback test servers"
     )

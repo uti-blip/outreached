@@ -215,13 +215,19 @@ def serialize_lead(conn, lead, drafts=None):
     return data
 
 
+def _drafts_by_lead(conn):
+    """Fetch summary fields once, without downloading every message body."""
+    by_lead = {}
+    for draft in conn.execute("SELECT lead_id,step,sent_at FROM drafts ORDER BY step").fetchall():
+        by_lead.setdefault(draft["lead_id"], []).append(draft)
+    return by_lead
+
+
 @router.get("/workspace")
 def workspace():
     with connect(write=False) as conn:
         profile = get_profile(conn) or Profile().model_dump()
-        by_lead = {}
-        for draft in conn.execute("SELECT * FROM drafts ORDER BY step").fetchall():
-            by_lead.setdefault(draft["lead_id"], []).append(draft)
+        by_lead = _drafts_by_lead(conn)
         leads = [
             serialize_lead(conn, row, by_lead.get(row["id"], []))
             for row in conn.execute("SELECT * FROM leads ORDER BY created_at DESC").fetchall()
@@ -296,7 +302,11 @@ def update_lead(lead_id: str, data: LeadUpdate):
         )
         if data.status == "do_not_contact":
             for email in {old["email"], data.email} - {""}:
-                conn.execute("INSERT OR IGNORE INTO suppressions VALUES (?,?)", (email, now()))
+                conn.execute(
+                    "INSERT INTO suppressions (email,created_at) VALUES (?,?) "
+                    "ON CONFLICT(email) DO NOTHING",
+                    (email, now()),
+                )
         if data.status != old["status"]:
             event(conn, lead_id, "status", data.status)
         event(conn, lead_id, "updated", "Fiche mise à jour")
@@ -423,8 +433,9 @@ def export_csv():
     writer = csv.DictWriter(output, fieldnames=fields)
     writer.writeheader()
     with connect(write=False) as conn:
+        by_lead = _drafts_by_lead(conn)
         for row in conn.execute("SELECT * FROM leads ORDER BY created_at").fetchall():
-            lead = serialize_lead(conn, row)
+            lead = serialize_lead(conn, row, by_lead.get(row["id"], []))
             writer.writerow({key: safe_cell(lead.get(key)) for key in fields})
     return Response(
         "\ufeff" + output.getvalue(),

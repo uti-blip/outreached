@@ -14,7 +14,7 @@ from backend.app.adapters.factory import LiveSendNotConfiguredError
 from backend.app.campaign_runner import run_campaign
 from backend.app.config import settings
 from backend.app.prospecting import CleanModel, router, validate_email
-from backend.app.workspace_store import connect, init_workspace
+from backend.app.workspace_store import WorkspaceStoreError, connect, init_workspace
 
 # Routes served without a workspace secret. Everything else under /api/ is
 # gated by the Bearer token check in protect_workspace.
@@ -96,7 +96,7 @@ def create_app() -> FastAPI:
         try:
             with connect(write=False) as conn:
                 conn.execute("SELECT id FROM profile LIMIT 1").fetchone()
-        except (SQLiteError, OSError):
+        except (SQLiteError, WorkspaceStoreError, OSError):
             return JSONResponse({"status": "unavailable"}, status_code=503)
         return {"status": "ready"}
 

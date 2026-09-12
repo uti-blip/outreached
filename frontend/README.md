@@ -14,6 +14,8 @@ node frontend/scripts/setup-auth.mjs --output .runtime/auth --user admin --origi
 
 The helper writes `frontend.env` and `workspace-login.txt` with owner-only file permissions and refuses to overwrite existing files. It prints file locations, never secrets. Keep the credentials in a password manager and keep generated files outside version control. The generated `WORKSPACE_API_KEY` must match the backend key.
 
+For the combined container, use your HTTPS frontend origin and add `--internal`. This explicitly enables only the fixed loopback backend. Remote production backends still require HTTPS.
+
 Configure the server environment (never `NEXT_PUBLIC_*`):
 
 | Variable | Purpose |
@@ -23,7 +25,9 @@ Configure the server environment (never `NEXT_PUBLIC_*`):
 | `WORKSPACE_SESSION_SECRET` | Random signing secret, at least 32 characters |
 | `WORKSPACE_PUBLIC_ORIGIN` | Exact frontend origin; HTTPS required in production |
 | `WORKSPACE_API_KEY` | Shared backend credential |
-| `BACKEND_URL` | Backend origin; HTTPS required in production |
+| `BACKEND_URL` | Backend origin; HTTPS required for a remote production backend |
+| `BACKEND_INTERNAL` | Set to `true` only for the combined container with the exact backend URL `http://127.0.0.1:8001` |
+| `SECRET_KEY` | Separate backend application secret generated for the combined container |
 
 The browser receives an 8-hour signed HttpOnly, SameSite=Strict session cookie, with Secure and the `__Host-` prefix in production. Every workspace API request verifies it. Writes also require the configured Origin and a session-bound CSRF token. Credential rotation revokes all existing sessions; logging out clears the current browser cookie. A copied cookie remains valid until expiry or credential rotation.
 
@@ -42,4 +46,4 @@ pnpm build
 pnpm audit --prod
 ```
 
-`GET /health` checks the frontend process only. Backend readiness and persistent storage must be checked separately.
+`GET /health` returns 200 only when authentication is configured and the backend database readiness check succeeds; otherwise it returns a generic 503. The combined Render container runs the API on loopback and the Next.js standalone server on the public port. PostgreSQL must be hosted externally because the free web service filesystem is ephemeral. The original volume-backed deployment remains available separately.
